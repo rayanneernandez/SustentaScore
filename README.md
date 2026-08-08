@@ -49,3 +49,4 @@ O **SustentaScore** é uma solução digital voltada para órgãos públicos que
 - **Lucide React** — ícones consistentes
 - **CSS Custom Properties** — design system próprio sem framework
 
+---

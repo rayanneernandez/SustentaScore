@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LineChart,
   Line,
@@ -25,13 +25,15 @@ import {
   Info,
   Calendar,
   Filter,
-  ChevronDown,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import {
   scoreHistorico,
   ocorrenciasPorTipo,
   distribuicaoScore,
   contratos,
+  ocorrencias,
 } from '../data/mockData';
 
 const faixasPagamento = [
@@ -40,33 +42,243 @@ const faixasPagamento = [
   { range: 'Abaixo de 350', percentual: '90%', status: 'Preto', color: 'preto' },
 ];
 
-const alertas = [
-  { tipo: 'erro', mensagem: '5 contratos com score abaixo de 350 pontos.', detalhe: 'Ações corretivas recomendadas.' },
-  { tipo: 'aviso', mensagem: '12 ocorrências graves registradas no mês.', detalhe: 'Verifique os detalhes.' },
-  { tipo: 'info', mensagem: '3 contratos próximos ao vencimento da medição.', detalhe: 'Acompanhe as medições em aberto.' },
-];
+const mesesAbreviados = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
-const menoresFornecedores = contratos
-  .sort((a, b) => a.score - b.score)
-  .slice(0, 5);
+const totalScoreGlobal = contratos.reduce((total, item) => total + item.score, 0);
+const mediaScoreGlobal = Math.round(totalScoreGlobal / contratos.length);
+
+function normalizarPeriodoDaData(data: string) {
+  const [ano, mes] = data.split('-');
+  const indiceMes = Number(mes) - 1;
+  const anoCurto = ano.slice(-2);
+  return `${mesesAbreviados[indiceMes]}/${anoCurto}`;
+}
+
+function limitarScore(score: number) {
+  return Math.max(0, Math.min(500, Math.round(score)));
+}
 
 export default function Dashboard() {
+  const dashboardRef = useRef<HTMLDivElement>(null);
   const [orgao, setOrgao] = useState('Todos');
   const [contrato, setContrato] = useState('Todos');
   const [fornecedor, setFornecedor] = useState('Todos');
-  const [periodo] = useState('mai/2024');
+  const [periodo, setPeriodo] = useState('Todos');
+  const [expandido, setExpandido] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setExpandido(document.fullscreenElement === dashboardRef.current);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const opcoesOrgao = useMemo(
+    () => ['Todos', ...new Set(contratos.map((item) => item.unidade).filter(Boolean) as string[])],
+    [],
+  );
+
+  const opcoesContrato = useMemo(
+    () => ['Todos', ...contratos.map((item) => item.numero)],
+    [],
+  );
+
+  const opcoesFornecedor = useMemo(
+    () => ['Todos', ...new Set(contratos.map((item) => item.fornecedorNome))],
+    [],
+  );
+
+  const opcoesPeriodo = useMemo(
+    () => ['Todos', ...scoreHistorico.map((item) => item.mes)],
+    [],
+  );
+
+  const contratosFiltrados = useMemo(
+    () =>
+      contratos.filter((item) => {
+        const matchOrgao = orgao === 'Todos' || item.unidade === orgao;
+        const matchContrato = contrato === 'Todos' || item.numero === contrato;
+        const matchFornecedor = fornecedor === 'Todos' || item.fornecedorNome === fornecedor;
+        return matchOrgao && matchContrato && matchFornecedor;
+      }),
+    [contrato, fornecedor, orgao],
+  );
+
+  const idsContratosFiltrados = useMemo(
+    () => new Set(contratosFiltrados.map((item) => item.id)),
+    [contratosFiltrados],
+  );
+
+  const ocorrenciasFiltradas = useMemo(
+    () =>
+      ocorrencias.filter((item) => {
+        const matchContrato = idsContratosFiltrados.has(item.contratoId);
+        const matchPeriodo = periodo === 'Todos' || normalizarPeriodoDaData(item.data) === periodo;
+        return matchContrato && matchPeriodo;
+      }),
+    [idsContratosFiltrados, periodo],
+  );
+
+  const scoreMedio = useMemo(() => {
+    if (!contratosFiltrados.length) {
+      return 0;
+    }
+
+    const total = contratosFiltrados.reduce((sum, item) => sum + item.score, 0);
+    return Math.round(total / contratosFiltrados.length);
+  }, [contratosFiltrados]);
+
+  const pagamentoMedio = useMemo(() => {
+    if (!contratosFiltrados.length) {
+      return 0;
+    }
+
+    const total = contratosFiltrados.reduce((sum, item) => sum + item.pagamento, 0);
+    return Math.round(total / contratosFiltrados.length);
+  }, [contratosFiltrados]);
+
+  const fornecedoresAvaliados = useMemo(
+    () => new Set(contratosFiltrados.map((item) => item.fornecedorId)).size,
+    [contratosFiltrados],
+  );
+
+  const distribuicaoFiltrada = useMemo(() => {
+    const totais = contratosFiltrados.reduce(
+      (acc, item) => {
+        acc[item.faixa] += 1;
+        return acc;
+      },
+      { verde: 0, cinza: 0, preto: 0 },
+    );
+
+    return distribuicaoScore.map((item) => {
+      if (item.name.includes('Verde')) {
+        return { ...item, value: totais.verde };
+      }
+
+      if (item.name.includes('Cinza')) {
+        return { ...item, value: totais.cinza };
+      }
+
+      return { ...item, value: totais.preto };
+    });
+  }, [contratosFiltrados]);
+
+  const percentualFaixaVerde = useMemo(() => {
+    const total = distribuicaoFiltrada.reduce((sum, item) => sum + item.value, 0);
+    if (!total) {
+      return 0;
+    }
+
+    return Math.round((distribuicaoFiltrada[0].value / total) * 100);
+  }, [distribuicaoFiltrada]);
+
+  const historicoFiltrado = useMemo(() => {
+    const ajuste = scoreMedio ? scoreMedio - mediaScoreGlobal : -mediaScoreGlobal;
+    const serie = scoreHistorico.map((item) => ({
+      ...item,
+      score: limitarScore(item.score + ajuste),
+    }));
+
+    if (periodo === 'Todos') {
+      return serie;
+    }
+
+    const indicePeriodo = serie.findIndex((item) => item.mes === periodo);
+    return indicePeriodo >= 0 ? serie.slice(0, indicePeriodo + 1) : serie;
+  }, [periodo, scoreMedio]);
+
+  const ocorrenciasAgrupadas = useMemo(() => {
+    const totais = ocorrenciasFiltradas.reduce<Record<string, number>>((acc, item) => {
+      acc[item.categoria] = (acc[item.categoria] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    const agrupadas = Object.entries(totais)
+      .map(([tipo, total]) => ({ tipo, total }))
+      .sort((a, b) => b.total - a.total);
+
+    return agrupadas.length ? agrupadas : [{ tipo: 'Sem registros', total: 0 }];
+  }, [ocorrenciasFiltradas]);
+
+  const menoresFornecedores = useMemo(
+    () => [...contratosFiltrados].sort((a, b) => a.score - b.score).slice(0, 5),
+    [contratosFiltrados],
+  );
+
+  const alertasFiltrados = useMemo(() => {
+    const abaixoDe350 = contratosFiltrados.filter((item) => item.score < 350).length;
+    const proximosVencimentos = contratosFiltrados
+      .filter((item) => item.vigencia)
+      .sort((a, b) => (a.vigencia ?? '').localeCompare(b.vigencia ?? ''))
+      .slice(0, 3).length;
+
+    return [
+      {
+        tipo: 'erro',
+        mensagem: `${abaixoDe350} contratos com score abaixo de 350 pontos.`,
+        detalhe: 'Priorize plano de ação para contratos em faixa crítica.',
+      },
+      {
+        tipo: 'aviso',
+        mensagem: `${ocorrenciasFiltradas.length} ocorrências registradas no recorte atual.`,
+        detalhe: 'Abra o detalhamento para verificar contratos impactados.',
+      },
+      {
+        tipo: 'info',
+        mensagem: `${proximosVencimentos} contratos próximos do vencimento da medição.`,
+        detalhe: 'Acompanhe medições pendentes para evitar atraso no fechamento.',
+      },
+    ];
+  }, [contratosFiltrados, ocorrenciasFiltradas.length]);
+
+  const totalOcorrencias = useMemo(
+    () => ocorrenciasAgrupadas.reduce((sum, item) => sum + item.total, 0),
+    [ocorrenciasAgrupadas],
+  );
+
+  const labelPeriodo = periodo === 'Todos' ? 'todos os períodos' : periodo;
+  const dashboardClasses = `page${expandido ? ' page--fullscreen' : ''}`;
+
+  const limparFiltros = () => {
+    setOrgao('Todos');
+    setContrato('Todos');
+    setFornecedor('Todos');
+    setPeriodo('Todos');
+  };
+
+  const alternarFullscreen = async () => {
+    try {
+      if (document.fullscreenElement === dashboardRef.current) {
+        await document.exitFullscreen();
+        return;
+      }
+
+      await dashboardRef.current?.requestFullscreen();
+    } catch (error) {
+      console.error('Nao foi possivel alternar o fullscreen do dashboard.', error);
+    }
+  };
 
   return (
-    <div className="page">
+    <div ref={dashboardRef} className={dashboardClasses}>
       {/* Header */}
       <div className="page-header dashboard-header">
         <div>
           <h1 className="page-title">Monitoramento de Desempenho de Fornecedores – Sustentabilidade (IMR)</h1>
           <p className="page-subtitle">Painel Gerencial</p>
         </div>
-        <div className="dashboard-last-update">
-          <Calendar size={14} />
-          <span>Última atualização:<br />31/05/2024 10:30</span>
+        <div className="dashboard-header-actions">
+          <button className="btn-secondary dashboard-expand-btn" onClick={alternarFullscreen}>
+            {expandido ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            {expandido ? 'Sair da tela inteira' : 'Tela inteira'}
+          </button>
+          <div className="dashboard-last-update">
+            <Calendar size={14} />
+            <span>Última atualização:<br />31/05/2024 10:30</span>
+          </div>
         </div>
       </div>
 
@@ -74,33 +286,45 @@ export default function Dashboard() {
       <div className="filters-bar">
         <div className="filter-group">
           <label className="filter-label">Órgão / Unidade</label>
-          <div className="filter-select" onClick={() => setOrgao(orgao === 'Todos' ? 'Todos' : 'Todos')}>
-            <span>{orgao}</span>
-            <ChevronDown size={14} />
-          </div>
+          <select className="filter-select-input" value={orgao} onChange={(event) => setOrgao(event.target.value)}>
+            {opcoesOrgao.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="filter-group">
           <label className="filter-label">Contrato</label>
-          <div className="filter-select" onClick={() => setContrato(contrato)}>
-            <span>{contrato}</span>
-            <ChevronDown size={14} />
-          </div>
+          <select className="filter-select-input" value={contrato} onChange={(event) => setContrato(event.target.value)}>
+            {opcoesContrato.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="filter-group">
           <label className="filter-label">Fornecedor</label>
-          <div className="filter-select" onClick={() => setFornecedor(fornecedor)}>
-            <span>{fornecedor}</span>
-            <ChevronDown size={14} />
-          </div>
+          <select className="filter-select-input" value={fornecedor} onChange={(event) => setFornecedor(event.target.value)}>
+            {opcoesFornecedor.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="filter-group">
           <label className="filter-label">Período</label>
-          <div className="filter-select filter-select--date">
-            <span>{periodo}</span>
-            <Calendar size={14} />
-          </div>
+          <select className="filter-select-input filter-select-input--date" value={periodo} onChange={(event) => setPeriodo(event.target.value)}>
+            {opcoesPeriodo.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
         </div>
-        <button className="btn-clear-filter">
+        <button className="btn-clear-filter" onClick={limparFiltros}>
           <Filter size={14} />
           Limpar filtros
         </button>
@@ -110,31 +334,31 @@ export default function Dashboard() {
       <div className="kpi-grid">
         <div className="kpi-card">
           <div className="kpi-icon"><FileText size={24} strokeWidth={1.5} /></div>
-          <div className="kpi-value">128</div>
+          <div className="kpi-value">{contratosFiltrados.length}</div>
           <div className="kpi-label">Contratos ativos</div>
           <div className="kpi-title">CONTRATOS MONITORADOS</div>
         </div>
         <div className="kpi-card">
           <div className="kpi-icon"><Users size={24} strokeWidth={1.5} /></div>
-          <div className="kpi-value">48</div>
+          <div className="kpi-value">{fornecedoresAvaliados}</div>
           <div className="kpi-label">Fornecedores</div>
           <div className="kpi-title">FORNECEDORES AVALIADOS</div>
         </div>
         <div className="kpi-card">
           <div className="kpi-icon"><Gauge size={24} strokeWidth={1.5} /></div>
-          <div className="kpi-value">428</div>
+          <div className="kpi-value">{scoreMedio}</div>
           <div className="kpi-label">de 500 pontos</div>
           <div className="kpi-title">SCORE MÉDIO</div>
         </div>
         <div className="kpi-card">
           <div className="kpi-icon"><CalendarCheck size={24} strokeWidth={1.5} /></div>
-          <div className="kpi-value">35</div>
-          <div className="kpi-label">Avaliados em mai/2024</div>
+          <div className="kpi-value">{contratosFiltrados.length}</div>
+          <div className="kpi-label">Avaliados em {labelPeriodo}</div>
           <div className="kpi-title">CONTRATOS NO MÊS</div>
         </div>
         <div className="kpi-card">
           <div className="kpi-icon"><DollarSign size={24} strokeWidth={1.5} /></div>
-          <div className="kpi-value">95%</div>
+          <div className="kpi-value">{pagamentoMedio}%</div>
           <div className="kpi-label">Percentual médio</div>
           <div className="kpi-title">PAGAMENTO MÉDIO</div>
         </div>
@@ -148,7 +372,7 @@ export default function Dashboard() {
           <div className="donut-wrapper">
             <PieChart width={200} height={200}>
               <Pie
-                data={distribuicaoScore}
+                data={distribuicaoFiltrada}
                 cx={100}
                 cy={100}
                 innerRadius={60}
@@ -157,17 +381,17 @@ export default function Dashboard() {
                 startAngle={90}
                 endAngle={-270}
               >
-                {distribuicaoScore.map((entry, index) => (
+                {distribuicaoFiltrada.map((entry, index) => (
                   <Cell key={index} fill={entry.color} />
                 ))}
               </Pie>
             </PieChart>
             <div className="donut-center">
-              <span className="donut-pct">58%</span>
+              <span className="donut-pct">{percentualFaixaVerde}%</span>
             </div>
           </div>
           <div className="donut-legend">
-            {distribuicaoScore.map((item, i) => (
+            {distribuicaoFiltrada.map((item, i) => (
               <div key={i} className="legend-item">
                 <span className="legend-dot" style={{ background: item.color }} />
                 <span className="legend-label">{item.name}</span>
@@ -181,7 +405,7 @@ export default function Dashboard() {
         <div className="chart-card chart-card--wide">
           <h3 className="chart-title">EVOLUÇÃO DO SCORE MÉDIO</h3>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={scoreHistorico} margin={{ top: 20, right: 20, bottom: 0, left: 0 }}>
+            <LineChart data={historicoFiltrado} margin={{ top: 20, right: 20, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E1D8" />
               <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
               <YAxis domain={[0, 500]} ticks={[0, 100, 200, 300, 400, 500]} tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
@@ -208,7 +432,7 @@ export default function Dashboard() {
           <h3 className="chart-title">DISTRIBUIÇÃO DAS OCORRÊNCIAS POR TIPO</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart
-              data={ocorrenciasPorTipo}
+              data={ocorrenciasAgrupadas}
               layout="vertical"
               margin={{ top: 0, right: 40, bottom: 0, left: 0 }}
             >
@@ -231,7 +455,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
           <div className="occurrence-total">
             <span>Total de ocorrências</span>
-            <strong>110</strong>
+            <strong>{totalOcorrencias}</strong>
           </div>
         </div>
       </div>
@@ -280,17 +504,23 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {menoresFornecedores.map((c) => (
-                <tr key={c.id}>
-                  <td>{c.fornecedorNome}</td>
-                  <td>{c.numero}</td>
-                  <td>{c.score}</td>
-                  <td>{c.pagamento}%</td>
-                  <td>
-                    <span className={`status-dot-only status-dot-only--${c.faixa}`} />
-                  </td>
+              {menoresFornecedores.length ? (
+                menoresFornecedores.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.fornecedorNome}</td>
+                    <td>{c.numero}</td>
+                    <td>{c.score}</td>
+                    <td>{c.pagamento}%</td>
+                    <td>
+                      <span className={`status-dot-only status-dot-only--${c.faixa}`} />
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="table-empty-state">Nenhum contrato encontrado para os filtros selecionados.</td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
           <div className="table-footer">
@@ -304,7 +534,7 @@ export default function Dashboard() {
         <div className="alerts-card">
           <h3 className="chart-title">ALERTAS</h3>
           <div className="alerts-list">
-            {alertas.map((a, i) => (
+            {alertasFiltrados.map((a, i) => (
               <div key={i} className={`alert-item alert-item--${a.tipo}`}>
                 <div className="alert-icon">
                   {a.tipo === 'info' ? (
