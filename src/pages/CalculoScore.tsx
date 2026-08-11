@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell } from 'recharts';
-import { contratos, medicoes } from '../data/mockData';
+import { medicoes } from '../data/mockData';
+import { useData } from '../context/DataContext';
 
 function getFaixa(score: number): { label: string; color: string; pct: string } {
   if (score >= 450) return { label: 'Zona Verde', color: '#3D5C3E', pct: '100% do pagamento' };
@@ -9,13 +10,57 @@ function getFaixa(score: number): { label: string; color: string; pct: string } 
 }
 
 export default function CalculoScore() {
-  const [contratoSel, setContratoSel] = useState(contratos[0].id);
+  const { contratos: todosContratos } = useData();
+  // Contratos inativos não entram no cálculo/apresentação do score.
+  const contratosAtivos = useMemo(
+    () => todosContratos.filter((c) => c.status === 'ativo'),
+    [todosContratos],
+  );
+
+  const [unidadeSel, setUnidadeSel] = useState('Todos');
+  const [contratoSel, setContratoSel] = useState(contratosAtivos[0]?.id ?? '');
   const [periodoSel, setPeriodoSel] = useState('Mar/2024');
 
-  const contrato = contratos.find((c) => c.id === contratoSel)!;
+  const opcoesUnidade = useMemo(
+    () => ['Todos', ...new Set(contratosAtivos.map((c) => c.unidade).filter(Boolean) as string[])],
+    [contratosAtivos],
+  );
+
+  // O contrato listado fica atrelado à unidade escolhida — inclui todos os contratos
+  // daquela unidade, mesmo quando o mesmo fornecedor aparece em mais de um contrato.
+  const contratosParaSelecao = useMemo(
+    () => contratosAtivos.filter((c) => unidadeSel === 'Todos' || c.unidade === unidadeSel),
+    [contratosAtivos, unidadeSel],
+  );
+
+  useEffect(() => {
+    if (!contratosParaSelecao.some((c) => c.id === contratoSel)) {
+      setContratoSel(contratosParaSelecao[0]?.id ?? '');
+    }
+  }, [contratosParaSelecao, contratoSel]);
+
+  const contrato = contratosAtivos.find((c) => c.id === contratoSel) ?? contratosParaSelecao[0] ?? contratosAtivos[0];
+
+  if (!contrato) {
+    return (
+      <div className="page">
+        <div className="page-header">
+          <div>
+            <h1 className="page-title-serif">Cálculo do Score</h1>
+            <p className="page-subtitle">Processamento automático da pontuação mensal.</p>
+          </div>
+        </div>
+        <div className="empty-state">
+          Nenhum contrato ativo encontrado. Contratos inativos não são contabilizados no score — reative um
+          contrato em Cadastro para calcular a pontuação.
+        </div>
+      </div>
+    );
+  }
+
   const medicao = medicoes.find(
-    (m) => m.contratoId === contratoSel && m.periodo === periodoSel
-  ) || medicoes.find((m) => m.contratoId === contratoSel);
+    (m) => m.contratoId === contrato.id && m.periodo === periodoSel
+  ) || medicoes.find((m) => m.contratoId === contrato.id);
 
   const score = medicao?.score ?? contrato.score;
   const ocorrenciasQtd = medicao?.ocorrencias ?? 0;
@@ -23,7 +68,7 @@ export default function CalculoScore() {
   const pagamentoPct = medicao?.pagamento ?? contrato.pagamento;
   const faixa = getFaixa(score);
 
-  const historico = medicoes.filter((m) => m.contratoId === contratoSel);
+  const historico = medicoes.filter((m) => m.contratoId === contrato.id);
 
   const donutData = [
     { value: score, color: faixa.color },
@@ -35,7 +80,7 @@ export default function CalculoScore() {
       <div className="page-header">
         <div>
           <h1 className="page-title-serif">Cálculo do Score</h1>
-          <p className="page-subtitle">Processamento automático da pontuação mensal.</p>
+          <p className="page-subtitle">Processamento automático da pontuação mensal. Contratos inativos não entram nesta lista.</p>
         </div>
       </div>
 
@@ -43,12 +88,21 @@ export default function CalculoScore() {
       <div className="score-selectors">
         <select
           className="score-selector"
-          value={contratoSel}
+          value={unidadeSel}
+          onChange={(e) => setUnidadeSel(e.target.value)}
+        >
+          {opcoesUnidade.map((u) => (
+            <option key={u} value={u}>{u === 'Todos' ? 'Todas as unidades' : u}</option>
+          ))}
+        </select>
+        <select
+          className="score-selector"
+          value={contrato.id}
           onChange={(e) => setContratoSel(e.target.value)}
         >
-          {contratos.slice(0, 3).map((c) => (
+          {contratosParaSelecao.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.fornecedorNome} — {c.numero}
+              {c.fornecedorNome} — {c.numero}{c.unidade ? ` · ${c.unidade}` : ''}
             </option>
           ))}
         </select>
@@ -132,7 +186,6 @@ export default function CalculoScore() {
               <div key={m.id} className="score-history-row">
                 <div className="history-period">{m.periodo}</div>
                 <div className="history-meta">Score: {m.score} · {m.pagamento}% do pagamento · {m.ocorrencias} ocorrência{m.ocorrencias !== 1 ? 's' : ''}</div>
-                <div className="history-value">R$ {m.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                 <div className={`history-status history-status--${m.status}`}>
                   {m.status === 'liberado' ? 'Liberado' : m.status === 'pendente' ? 'Pendente' : 'Bloqueado'}
                 </div>

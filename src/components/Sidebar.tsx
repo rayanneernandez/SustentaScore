@@ -8,11 +8,12 @@ import {
   BarChart2,
   HelpCircle,
   LogOut,
+  X,
 } from 'lucide-react';
 
 const navOperacional = [
   { to: '/cadastro', label: 'Cadastro', icon: Users, num: 1 },
-  { to: '/indicadores', label: 'Indicadores de Sustentabilidade', icon: Leaf, num: 2 },
+  { to: '/indicadores', label: 'Macroindicadores', icon: Leaf, num: 2 },
   { to: '/ocorrencias', label: 'Registro de Ocorrências', icon: AlertTriangle, num: 3 },
   { to: '/score', label: 'Cálculo do Score', icon: Calculator, num: 4 },
   { to: '/medicao', label: 'Medição e Pagamento', icon: ClipboardList, num: 5 },
@@ -22,9 +23,9 @@ const navGerencial = [
   { to: '/', label: 'Monitoramento e Painel Gerencial', icon: BarChart2, num: 6 },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${open ? ' sidebar--open' : ''}`}>
       {/* Logo */}
       <div className="sidebar-logo">
         <div className="sidebar-logo-icon">
@@ -34,6 +35,9 @@ export default function Sidebar() {
           <div className="sidebar-logo-title">SustentaScore</div>
           <div className="sidebar-logo-sub">Avaliação de Fornecedores</div>
         </div>
+        <button className="sidebar-close-btn" onClick={onClose} aria-label="Fechar menu">
+          <X size={18} />
+        </button>
       </div>
 
       {/* Ambiente Operacional */}
@@ -45,6 +49,7 @@ export default function Sidebar() {
               key={to}
               to={to}
               end={to === '/'}
+              onClick={onClose}
               className={({ isActive }) =>
                 `sidebar-nav-item${isActive ? ' sidebar-nav-item--active' : ''}`
               }
@@ -66,6 +71,7 @@ export default function Sidebar() {
               key={to}
               to={to}
               end
+              onClick={onClose}
               className={({ isActive }) =>
                 `sidebar-nav-item${isActive ? ' sidebar-nav-item--active' : ''}`
               }

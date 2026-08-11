@@ -39,6 +39,17 @@ html, body, #root {
   flex: 1;
   overflow-y: auto;
   background: var(--bg);
+  transition: margin-right 0.22s ease;
+}
+
+/* Com o painel de notificações aberto, o conteúdo principal encolhe para abrir
+ * espaço para a faixa fixa à direita — só em telas largas, onde há espaço de
+ * sobra; em telas estreitas o painel já ocupa quase tudo, então não faz sentido
+ * encolher o conteúdo também. */
+@media (min-width: 901px) {
+  .main-content--notif-open {
+    margin-right: 340px;
+  }
 }
 
 /* ─── Sidebar ────────────────────────────────────────────────── */
@@ -51,6 +62,31 @@ html, body, #root {
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
+  flex-shrink: 0;
+}
+
+.sidebar-close-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sidebar-close-btn:hover { background: var(--bg); }
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1100;
 }
 
 .sidebar-logo {
@@ -353,7 +389,7 @@ html, body, #root {
 /* ─── KPI Cards ──────────────────────────────────────────────── */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -392,6 +428,13 @@ html, body, #root {
   font-weight: 600;
   color: var(--text);
   line-height: 1;
+}
+
+/* Para KPIs cujo valor é um texto (ex: nome de unidade) em vez de um número curto. */
+.kpi-value--sm {
+  font-size: 15px;
+  line-height: 1.3;
+  word-break: break-word;
 }
 
 .kpi-label {
@@ -433,6 +476,20 @@ html, body, #root {
   text-transform: uppercase;
   margin-bottom: 16px;
 }
+
+.chart-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.chart-card-header .chart-title { margin-bottom: 0; }
+
+.segmented-toggle--sm { flex-shrink: 0; }
+.segmented-toggle--sm .segmented-toggle-btn { padding: 5px 10px; font-size: 11px; }
 
 /* Donut */
 .donut-wrapper {
@@ -496,8 +553,17 @@ html, body, #root {
 /* ─── Bottom Grid ────────────────────────────────────────────── */
 .bottom-grid {
   display: grid;
-  grid-template-columns: 1fr 1.8fr 1fr;
+  grid-template-columns: 1fr 2fr;
   gap: 12px;
+}
+
+/* Itens de grid não devem crescer além do espaço disponível por causa do
+   conteúdo interno (tabelas largas, gráficos) — permite que .table-scroll
+   e o ResponsiveContainer funcionem corretamente em telas pequenas. */
+.charts-grid > *,
+.bottom-grid > *,
+.kpi-grid > * {
+  min-width: 0;
 }
 
 .table-card {
@@ -697,6 +763,11 @@ html, body, #root {
   display: flex;
   gap: 12px;
   margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.search-bar-row .search-bar {
+  min-width: 220px;
 }
 
 .search-bar {
@@ -832,9 +903,16 @@ html, body, #root {
   gap: 6px;
 }
 
+.indicator-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
 .indicator-card-icon {
-  width: 38px;
-  height: 38px;
+  width: 28px;
+  height: 28px;
   background: var(--bg);
   border-radius: 50%;
   display: flex;
@@ -848,7 +926,6 @@ html, body, #root {
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
-  margin-bottom: 6px;
 }
 
 .indicator-card-desc {
@@ -1056,6 +1133,87 @@ html, body, #root {
 }
 
 .text-danger { color: var(--danger) !important; }
+
+.occurrence-badge-treinamento {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--primary);
+  border-color: var(--primary-light);
+}
+
+.occurrence-sem-deducao {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.occurrence-detail-anexos {
+  margin-top: 14px;
+  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.occurrence-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
+/* ─── Alternância segmentada (ex: Ocorrência x Treinamento) ────── */
+.segmented-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented-toggle-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.segmented-toggle-btn:not(:last-child) { border-right: 1px solid var(--border); }
+
+.segmented-toggle-btn--active {
+  background: var(--primary-pale);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ─── Gerenciar tags / eixos temáticos ──────────────────────────── */
+.tag-manage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.tag-manage-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
 
 /* ─── Score ──────────────────────────────────────────────────── */
 .score-selectors {
@@ -1330,7 +1488,15 @@ html, body, #root {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 12px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.payment-history-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .payment-history-list {
@@ -1373,12 +1539,6 @@ html, body, #root {
   font-size: 11.5px;
   color: var(--text-muted);
   margin-top: 2px;
-}
-
-.history-item-value {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
 }
 
 .history-item-status {
@@ -1621,10 +1781,39 @@ html, body, #root {
   color: var(--text);
 }
 
+.contract-item-num .status-dot-only {
+  margin-right: 7px;
+  vertical-align: -1px;
+}
+
+.contract-item--static { cursor: default; }
+.contract-item--static:hover { box-shadow: none; }
+
 .contract-item-meta {
   font-size: 11.5px;
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+.contract-item-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.contract-item-edit-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-pale);
 }
 
 .contract-status {
@@ -1688,5 +1877,485 @@ html, body, #root {
 
   .kpi-grid {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ─── Form hints ─────────────────────────────────────────────── */
+.form-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.form-hint--danger { color: var(--danger); }
+.form-hint--warning { color: #92400E; background: var(--warning-pale); padding: 8px 10px; border-radius: 8px; margin-top: 8px; }
+.form-hint--muted { color: var(--text-muted); margin-top: 6px; }
+
+/* ─── Upload de arquivo ──────────────────────────────────────── */
+.file-upload-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  position: relative;
+}
+
+.file-upload-box:hover { border-color: var(--primary); background: var(--primary-pale); color: var(--text); }
+
+.file-upload-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* ─── Badge de vigência ──────────────────────────────────────── */
+.vigencia-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.vigencia-badge--ok { background: #E8F2E8; color: #2C4A2E; }
+.vigencia-badge--alerta { background: var(--warning-pale); color: #92400E; }
+.vigencia-badge--vencido { background: var(--danger-pale); color: var(--danger); }
+
+.contract-item-anexo-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* ─── Lista de anexos (cadastro e detalhe do contrato) ──────────── */
+.anexo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.anexo-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.anexo-item-nome {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.anexo-item-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+}
+
+.anexo-item-link:hover { text-decoration: underline; }
+
+.anexo-item-remove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.anexo-item-remove:hover { background: var(--danger-pale); color: var(--danger); }
+
+/* ─── Detalhe do contrato (modal) ────────────────────────────── */
+.detail-block {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.detail-block:first-of-type { border-top: none; padding-top: 0; }
+
+.detail-block-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.inline-form {
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--bg);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ─── Histórico do contrato ──────────────────────────────────── */
+.historico-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.historico-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 8px;
+}
+
+.historico-tag {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.historico-tag--criacao { background: var(--primary-pale); color: var(--primary); }
+.historico-tag--edicao { background: #EBF2FC; color: #1E4080; }
+.historico-tag--status { background: #F0EFED; color: #4B5563; }
+.historico-tag--prorrogacao { background: var(--warning-pale); color: #92400E; }
+.historico-tag--anexo { background: #E8F2E8; color: #2C4A2E; }
+.historico-tag--observacao { background: #F0EFED; color: #4B5563; }
+
+.historico-item-body { flex: 1; }
+.historico-desc { font-size: 12.5px; color: var(--text); line-height: 1.4; }
+.historico-data { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+
+/* ─── Topbar / Notificações ──────────────────────────────────── */
+.topbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 32px 0;
+}
+
+.topbar-menu-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.topbar-menu-btn:hover { background: var(--bg); }
+
+.notif-wrapper { position: relative; }
+
+.notif-bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.notif-bell:hover { background: var(--bg); }
+
+.notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.notif-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: transparent;
+}
+
+/* Painel de notificações: sempre uma faixa fixa à direita da tela (do topo até o
+ * rodapé), nunca um dropdown flutuando por cima do conteúdo abaixo do sino — em
+ * telas largas o conteúdo principal encolhe (.main-content--notif-open) para abrir
+ * espaço em vez de ficar coberto. */
+.notif-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  max-width: 88vw;
+  overflow-y: auto;
+  background: #fff;
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0,0,0,0.10);
+  z-index: 1000;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.notif-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.notif-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.notif-marcar-todas {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.notif-marcar-todas:hover { background: var(--bg); }
+
+.notif-empty {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notif-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  text-align: left;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--bg);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.notif-item:hover { background: var(--border); }
+.notif-item--alta { background: var(--danger-pale); }
+.notif-item--alta:hover { background: #f9dedd; }
+.notif-item--media { background: var(--warning-pale); }
+.notif-item--media:hover { background: #fbeed2; }
+.notif-item--baixa { background: var(--bg); }
+.notif-item--alta svg { color: var(--danger); flex-shrink: 0; margin-top: 1px; }
+.notif-item--media svg { color: var(--warning); flex-shrink: 0; margin-top: 1px; }
+.notif-item--baixa svg { color: var(--text-muted); flex-shrink: 0; margin-top: 1px; }
+
+.notif-item--lida {
+  background: transparent;
+  opacity: 0.55;
+}
+.notif-item--lida:hover { background: var(--bg); opacity: 0.8; }
+.notif-item--lida svg { color: var(--text-muted); }
+
+.notif-item-body { flex: 1; }
+.notif-item-title { font-size: 12.5px; font-weight: 600; }
+.notif-item-desc { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+
+.notif-item-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary);
+  margin-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .topbar { padding: 14px 20px 0; }
+}
+
+/* ─── Tabelas com rolagem horizontal em telas pequenas ──────────── */
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* ─── Menu lateral off-canvas (tablet/celular) ──────────────────── */
+@media (max-width: 900px) {
+  .app-shell {
+    position: relative;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    max-width: 82vw;
+    z-index: 1200;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 0 0 28px rgba(0, 0, 0, 0.18);
+  }
+
+  .sidebar--open {
+    transform: translateX(0);
+  }
+
+  .sidebar-close-btn {
+    display: flex;
+  }
+
+  .topbar-menu-btn {
+    display: flex;
+  }
+
+  .topbar {
+    justify-content: space-between;
+  }
+}
+
+/* ─── Grids e formulários — telas médias/pequenas ───────────────── */
+@media (max-width: 900px) {
+  .score-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .indicators-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .modal-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .search-bar-row > .search-bar,
+  .search-bar-row > select,
+  .search-bar-row > button {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .score-selectors {
+    flex-wrap: wrap;
+  }
+
+  .score-selectors > .score-selector {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .occurrence-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .supplier-card {
+    flex-wrap: wrap;
+  }
+
+  .supplier-card-score {
+    text-align: left;
+    margin-left: 54px;
+  }
+
+  .contract-item {
+    flex-wrap: wrap;
+  }
+
+  .contract-status {
+    margin-left: auto;
+  }
+
+  .payment-history-item {
+    flex-wrap: wrap;
+  }
+
+  .payment-faixa-left {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .modal {
+    padding: 18px;
   }
 }

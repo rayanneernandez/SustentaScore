@@ -1,45 +1,54 @@
 import { useState } from 'react';
 import {
   Search, Plus, ChevronRight, ChevronDown, Building2,
-  MapPin, Phone, User, FileText, Pencil, X,
+  MapPin, Phone, User, FileText, Pencil, X, Paperclip,
+  Upload, RefreshCw, Clock, AlertTriangle, CheckCircle2,
+  ExternalLink, History, Power, PowerOff, Trash2,
 } from 'lucide-react';
-import { fornecedores as dadosIniciais, contratos as dadosContratos } from '../data/mockData';
-import type { Fornecedor, Contrato } from '../types';
+import { useData, statusVigencia, diasParaVencimento, formatarDataBR, criarEventoHistorico, ALERTA_DIAS_PADRAO } from '../context/DataContext';
+import { TAMANHO_MAX_ANEXO, MAX_ANEXOS_POR_ENVIO, arquivosParaAnexos } from '../utils/anexos';
+import type { Fornecedor, Contrato, HistoricoTipo, Anexo } from '../types';
 
-// ── Modal Novo Fornecedor ─────────────────────────────────────────
+// ── Modal Novo / Editar Fornecedor ────────────────────────────────
 function ModalFornecedor({
+  fornecedorParaEditar,
   onClose,
-  onSave,
 }: {
+  fornecedorParaEditar?: Fornecedor;
   onClose: () => void;
-  onSave: (f: Fornecedor) => void;
 }) {
+  const { addFornecedor, updateFornecedor } = useData();
   const [form, setForm] = useState({
-    nome: '', cnpj: '', endereco: '', telefone: '', preposto: '', observacao: '',
+    nome: fornecedorParaEditar?.nome ?? '',
+    cnpj: fornecedorParaEditar?.cnpj ?? '',
+    endereco: fornecedorParaEditar?.endereco ?? '',
+    telefone: fornecedorParaEditar?.telefone ?? '',
+    preposto: fornecedorParaEditar?.preposto ?? '',
+    observacao: fornecedorParaEditar?.observacao ?? '',
   });
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   const handleSave = () => {
     if (!form.nome || !form.cnpj) return;
-    onSave({
-      id: `f${Date.now()}`,
-      nome: form.nome,
-      cnpj: form.cnpj,
-      contratos: 0,
-      score: 500,
-      faixa: 'verde',
-      endereco: form.endereco,
-      telefone: form.telefone,
-      preposto: form.preposto,
-      observacao: form.observacao,
-    });
+    if (fornecedorParaEditar) {
+      updateFornecedor(fornecedorParaEditar.id, { ...form });
+    } else {
+      addFornecedor({
+        id: `f${Date.now()}`,
+        contratos: 0,
+        score: 500,
+        faixa: 'verde',
+        ...form,
+      });
+    }
+    onClose();
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal--lg" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">Novo Fornecedor</h2>
+          <h2 className="modal-title">{fornecedorParaEditar ? 'Editar Fornecedor' : 'Novo Fornecedor'}</h2>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="modal-grid-2">
@@ -70,51 +79,142 @@ function ModalFornecedor({
         </div>
         <div className="modal-actions">
           <button className="btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn-primary" onClick={handleSave}>Salvar</button>
+          <button className="btn-primary" onClick={handleSave}>
+            {fornecedorParaEditar ? 'Salvar alterações' : 'Salvar'}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Modal Novo Contrato ───────────────────────────────────────────
+const CAMPO_CONTRATO_LABEL: Record<string, string> = {
+  numero: 'Número', ano: 'Ano', objeto: 'Objeto', unidade: 'Unidade Administrativa',
+  vigenciaInicio: 'Vigência Início', vigenciaFim: 'Vigência Fim', tipo: 'Tipo', status: 'Status',
+  fiscalTecnico: 'Fiscal Técnico', fiscalAdministrativo: 'Fiscal Administrativo',
+  fiscalSubstituto: 'Fiscal Substituto', gestor: 'Gestor', gestorSubstituto: 'Gestor Substituto',
+  observacao: 'Observação',
+};
+
+// ── Modal Novo / Editar Contrato ──────────────────────────────────
 function ModalContrato({
   fornecedores,
   fornecedorId,
   fornecedorNome,
+  contratoParaEditar,
   onClose,
-  onSave,
 }: {
   fornecedores: Fornecedor[];
   fornecedorId: string;
   fornecedorNome: string;
+  contratoParaEditar?: Contrato;
   onClose: () => void;
-  onSave: (c: Contrato) => void;
 }) {
-  const [form, setForm] = useState({
-    fornId: fornecedorId,
-    numero: '',
-    ano: new Date().getFullYear().toString(),
-    objeto: '',
-    unidade: '',
-    vigenciaInicio: '',
-    vigenciaFim: '',
-    tipo: 'Contrato Original',
-    status: 'ativo' as 'ativo' | 'inativo',
-    fiscalTecnico: '',
-    fiscalAdministrativo: '',
-    fiscalSubstituto: '',
-    gestor: '',
-    gestorSubstituto: '',
-    observacao: '',
-  });
+  const { addContrato, updateContrato } = useData();
+  const valoresIniciais = {
+    fornId: contratoParaEditar?.fornecedorId ?? fornecedorId,
+    numero: contratoParaEditar?.numero ?? '',
+    ano: contratoParaEditar?.ano ?? new Date().getFullYear().toString(),
+    objeto: contratoParaEditar?.objeto ?? '',
+    unidade: contratoParaEditar?.unidade ?? '',
+    vigenciaInicio: contratoParaEditar?.vigenciaInicio ?? '',
+    vigenciaFim: contratoParaEditar?.vigenciaFim ?? '',
+    tipo: contratoParaEditar?.tipo ?? 'Contrato Original',
+    status: (contratoParaEditar?.status ?? 'ativo') as 'ativo' | 'inativo',
+    fiscalTecnico: contratoParaEditar?.fiscalTecnico ?? '',
+    fiscalAdministrativo: contratoParaEditar?.fiscalAdministrativo ?? '',
+    fiscalSubstituto: contratoParaEditar?.fiscalSubstituto ?? '',
+    gestor: contratoParaEditar?.gestor ?? '',
+    gestorSubstituto: contratoParaEditar?.gestorSubstituto ?? '',
+    observacao: contratoParaEditar?.observacao ?? '',
+  };
+  const [form, setForm] = useState(valoresIniciais);
+  const [arquivos, setArquivos] = useState<File[]>([]);
+  const [erroArquivo, setErroArquivo] = useState('');
+  const [salvando, setSalvando] = useState(false);
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   const fornSelecionado = fornecedores.find((f) => f.id === form.fornId);
 
-  const handleSave = () => {
+  const handleArquivos = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const novos = Array.from(e.target.files ?? []);
+    if (!novos.length) return;
+
+    const grandeDemais = novos.filter((f) => f.size > TAMANHO_MAX_ANEXO);
+    const validos = novos.filter((f) => f.size <= TAMANHO_MAX_ANEXO);
+
+    setArquivos((prev) => {
+      const combinados = [...prev, ...validos];
+      if (combinados.length > MAX_ANEXOS_POR_ENVIO) {
+        setErroArquivo(`Você pode anexar no máximo ${MAX_ANEXOS_POR_ENVIO} arquivos por contrato.`);
+        return combinados.slice(0, MAX_ANEXOS_POR_ENVIO);
+      }
+      setErroArquivo(grandeDemais.length ? 'Alguns arquivos passaram de 4MB e não foram adicionados.' : '');
+      return combinados;
+    });
+    e.target.value = '';
+  };
+
+  const removerArquivo = (index: number) => {
+    setArquivos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSave = async () => {
     if (!form.numero || !form.fornId) return;
-    onSave({
+    setSalvando(true);
+
+    if (contratoParaEditar) {
+      const camposAlterados = Object.keys(CAMPO_CONTRATO_LABEL).filter(
+        (k) => valoresIniciais[k as keyof typeof valoresIniciais] !== form[k as keyof typeof form]
+      );
+      const patch: Partial<Contrato> = {
+        numero: form.numero,
+        ano: form.ano,
+        objeto: form.objeto,
+        unidade: form.unidade,
+        vigenciaInicio: form.vigenciaInicio,
+        vigenciaFim: form.vigenciaFim,
+        vigencia: form.vigenciaFim,
+        tipo: form.tipo,
+        status: form.status,
+        fiscalTecnico: form.fiscalTecnico,
+        fiscalAdministrativo: form.fiscalAdministrativo,
+        fiscalSubstituto: form.fiscalSubstituto,
+        gestor: form.gestor,
+        gestorSubstituto: form.gestorSubstituto,
+        observacao: form.observacao,
+      };
+      if (camposAlterados.length > 0) {
+        updateContrato(contratoParaEditar.id, patch, {
+          tipo: 'edicao',
+          descricao: `Dados do contrato atualizados: ${camposAlterados.map((k) => CAMPO_CONTRATO_LABEL[k]).join(', ')}.`,
+        });
+      }
+      setSalvando(false);
+      onClose();
+      return;
+    }
+
+    const historico = [
+      criarEventoHistorico('criacao', `Contrato cadastrado (${form.tipo}).`),
+    ];
+
+    let anexos: Anexo[] = [];
+    if (arquivos.length) {
+      try {
+        anexos = await arquivosParaAnexos(arquivos);
+        historico.push(criarEventoHistorico(
+          'anexo',
+          arquivos.length === 1
+            ? `Arquivo "${arquivos[0].name}" anexado no cadastro.`
+            : `${arquivos.length} arquivos anexados no cadastro: ${arquivos.map((a) => a.name).join(', ')}.`
+        ));
+      } catch {
+        setErroArquivo('Não foi possível ler algum dos arquivos anexados. O contrato será salvo sem eles.');
+      }
+    }
+
+    addContrato({
       id: `ct${Date.now()}`,
       fornecedorId: form.fornId,
       fornecedorNome: fornSelecionado?.nome ?? fornecedorNome,
@@ -136,14 +236,18 @@ function ModalContrato({
       faixa: 'verde',
       pagamento: 100,
       status: form.status,
+      alertaDiasAntes: ALERTA_DIAS_PADRAO,
+      historico,
+      anexos,
     });
+    onClose();
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal--lg modal--scroll" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">Novo Contrato</h2>
+          <h2 className="modal-title">{contratoParaEditar ? 'Editar Contrato' : 'Novo Contrato'}</h2>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
         <p className="modal-subtitle">Dados do contrato administrativo.</p>
@@ -153,12 +257,16 @@ function ModalContrato({
           {/* Fornecedor */}
           <div className="form-group">
             <label className="form-label">Fornecedor *</label>
-            <select className="form-input" value={form.fornId} onChange={(e) => set('fornId', e.target.value)}>
-              <option value="">Selecione</option>
-              {fornecedores.map((f) => (
-                <option key={f.id} value={f.id}>{f.nome}</option>
-              ))}
-            </select>
+            {contratoParaEditar ? (
+              <input className="form-input" value={fornSelecionado?.nome ?? fornecedorNome} disabled />
+            ) : (
+              <select className="form-input" value={form.fornId} onChange={(e) => set('fornId', e.target.value)}>
+                <option value="">Selecione</option>
+                {fornecedores.map((f) => (
+                  <option key={f.id} value={f.id}>{f.nome}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Objeto */}
@@ -202,6 +310,7 @@ function ModalContrato({
           <div className="form-group">
             <label className="form-label">Vigência Fim</label>
             <input className="form-input" type="date" value={form.vigenciaFim} onChange={(e) => set('vigenciaFim', e.target.value)} />
+            <span className="form-hint">Você poderá prorrogar essa data depois, direto no detalhe do contrato.</span>
           </div>
 
           {/* Tipo */}
@@ -218,11 +327,48 @@ function ModalContrato({
           {/* Status */}
           <div className="form-group">
             <label className="form-label">Status</label>
-            <select className="form-input" value={form.status} onChange={(e) => set('status', e.target.value)}>
+            <select className="form-input" value={form.status} onChange={(e) => set('status', e.target.value as 'ativo' | 'inativo')}>
               <option value="ativo">Ativo</option>
               <option value="inativo">Inativo</option>
             </select>
           </div>
+
+          {/* Anexo */}
+          {contratoParaEditar ? (
+            <div className="form-group form-group--full">
+              <label className="form-label">Anexos</label>
+              <p className="form-hint form-hint--muted" style={{ marginTop: 0 }}>
+                Para anexar, substituir ou remover arquivos deste contrato, use a seção "Contratos Anexados" no detalhe do contrato.
+              </p>
+            </div>
+          ) : (
+            <div className="form-group form-group--full">
+              <label className="form-label">Anexar contrato assinado / ativo</label>
+              <label className="file-upload-box">
+                <Upload size={16} />
+                <span>
+                  {arquivos.length
+                    ? `${arquivos.length} arquivo${arquivos.length !== 1 ? 's' : ''} selecionado${arquivos.length !== 1 ? 's' : ''}`
+                    : 'Selecionar um ou mais arquivos — PDF, imagem ou documento (até 4MB cada)'}
+                </span>
+                <input type="file" multiple accept=".pdf,.doc,.docx,image/*" className="file-upload-input" onChange={handleArquivos} />
+              </label>
+              {arquivos.length > 0 && (
+                <div className="anexo-list">
+                  {arquivos.map((f, i) => (
+                    <div key={`${f.name}-${i}`} className="anexo-item">
+                      <Paperclip size={13} />
+                      <span className="anexo-item-nome">{f.name}</span>
+                      <button type="button" className="anexo-item-remove" onClick={() => removerArquivo(i)} aria-label="Remover arquivo">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {erroArquivo && <span className="form-hint form-hint--danger">{erroArquivo}</span>}
+            </div>
+          )}
 
           {/* Seção: Fiscalização e Gestão */}
           <div className="form-group form-group--full">
@@ -259,7 +405,303 @@ function ModalContrato({
         </div>
         <div className="modal-actions">
           <button className="btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn-primary" onClick={handleSave}>Cadastrar</button>
+          <button className="btn-primary" onClick={handleSave} disabled={salvando}>
+            {salvando ? 'Salvando...' : contratoParaEditar ? 'Salvar alterações' : 'Cadastrar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Badge de vigência (alerta de vencimento) ───────────────────────
+function BadgeVigencia({ contrato }: { contrato: Contrato }) {
+  const status = statusVigencia(contrato);
+  if (!status) return null;
+  const dias = diasParaVencimento(contrato.vigenciaFim);
+
+  if (status === 'vencido') {
+    return (
+      <span className="vigencia-badge vigencia-badge--vencido">
+        <AlertTriangle size={12} /> Vencido há {Math.abs(dias ?? 0)} dia{Math.abs(dias ?? 0) !== 1 ? 's' : ''}
+      </span>
+    );
+  }
+  if (status === 'alerta') {
+    return (
+      <span className="vigencia-badge vigencia-badge--alerta">
+        <Clock size={12} /> Renovar até {formatarDataBR(contrato.vigenciaFim)} · faltam {dias} dia{dias !== 1 ? 's' : ''}
+      </span>
+    );
+  }
+  return (
+    <span className="vigencia-badge vigencia-badge--ok">
+      <CheckCircle2 size={12} /> Vigente até {formatarDataBR(contrato.vigenciaFim)}
+    </span>
+  );
+}
+
+const rotuloTipoHistorico: Record<HistoricoTipo, string> = {
+  criacao: 'Criação',
+  edicao: 'Edição',
+  status: 'Status',
+  prorrogacao: 'Prorrogação',
+  anexo: 'Anexo',
+  observacao: 'Observação',
+};
+
+// ── Modal Detalhe do Contrato ───────────────────────────────────────
+function ModalDetalheContrato({
+  contrato,
+  onClose,
+  onEditar,
+}: {
+  contrato: Contrato;
+  onClose: () => void;
+  onEditar: (c: Contrato) => void;
+}) {
+  const { updateContrato } = useData();
+  const [mostrarProrrogacao, setMostrarProrrogacao] = useState(false);
+  const [novaData, setNovaData] = useState(contrato.vigenciaFim ?? '');
+  const [motivo, setMotivo] = useState('');
+  const [erroArquivo, setErroArquivo] = useState('');
+  const [enviandoArquivo, setEnviandoArquivo] = useState(false);
+
+  const status = statusVigencia(contrato);
+  const dias = diasParaVencimento(contrato.vigenciaFim);
+
+  const alternarStatus = () => {
+    const novoStatus = contrato.status === 'ativo' ? 'inativo' : 'ativo';
+    updateContrato(contrato.id, { status: novoStatus }, {
+      tipo: 'status',
+      descricao: novoStatus === 'inativo'
+        ? 'Contrato marcado como inativo — deixou de contar no cálculo do score.'
+        : 'Contrato reativado — volta a contar no cálculo do score.',
+    });
+  };
+
+  const confirmarProrrogacao = () => {
+    if (!novaData) return;
+    const dataAnterior = formatarDataBR(contrato.vigenciaFim);
+    updateContrato(contrato.id, { vigenciaFim: novaData, vigencia: novaData }, {
+      tipo: 'prorrogacao',
+      descricao: `Vigência prorrogada de ${dataAnterior} para ${formatarDataBR(novaData)}.${motivo ? ` Motivo: ${motivo}` : ''}`,
+    });
+    setMostrarProrrogacao(false);
+    setMotivo('');
+  };
+
+  const alterarAlerta = (valor: number) => {
+    updateContrato(contrato.id, { alertaDiasAntes: valor }, {
+      tipo: 'edicao',
+      descricao: `Prazo de alerta de renovação ajustado para ${valor} dias antes do vencimento.`,
+    });
+  };
+
+  const anexosAtuais = contrato.anexos ?? [];
+
+  const handleArquivos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const novos = Array.from(e.target.files ?? []);
+    if (!novos.length) return;
+
+    const grandeDemais = novos.filter((f) => f.size > TAMANHO_MAX_ANEXO);
+    const validos = novos.filter((f) => f.size <= TAMANHO_MAX_ANEXO);
+
+    if (anexosAtuais.length + validos.length > MAX_ANEXOS_POR_ENVIO) {
+      setErroArquivo(`Este contrato pode ter no máximo ${MAX_ANEXOS_POR_ENVIO} anexos.`);
+      e.target.value = '';
+      return;
+    }
+
+    setErroArquivo(grandeDemais.length ? 'Alguns arquivos passaram de 4MB e não foram anexados.' : '');
+    if (!validos.length) {
+      e.target.value = '';
+      return;
+    }
+
+    setEnviandoArquivo(true);
+    try {
+      const novosAnexos = await arquivosParaAnexos(validos);
+      updateContrato(contrato.id, {
+        anexos: [...anexosAtuais, ...novosAnexos],
+      }, {
+        tipo: 'anexo',
+        descricao: validos.length === 1
+          ? `Arquivo "${validos[0].name}" anexado ao contrato.`
+          : `${validos.length} arquivos anexados ao contrato: ${validos.map((a) => a.name).join(', ')}.`,
+      });
+    } catch {
+      setErroArquivo('Não foi possível ler algum desses arquivos.');
+    } finally {
+      setEnviandoArquivo(false);
+      e.target.value = '';
+    }
+  };
+
+  const removerAnexo = (anexo: Anexo) => {
+    updateContrato(contrato.id, {
+      anexos: anexosAtuais.filter((a) => a.id !== anexo.id),
+    }, {
+      tipo: 'anexo',
+      descricao: `Arquivo "${anexo.nome}" removido do contrato.`,
+    });
+  };
+
+  const historicoOrdenado = [...(contrato.historico ?? [])].sort(
+    (a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()
+  );
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal--lg modal--scroll" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <h2 className="modal-title">{contrato.numero}</h2>
+            <p className="modal-subtitle" style={{ margin: '2px 0 0' }}>{contrato.fornecedorNome} · {contrato.objeto}</p>
+          </div>
+          <div className="detail-block-row" style={{ flexWrap: 'nowrap' }}>
+            <button className="btn-icon" onClick={() => onEditar(contrato)}>
+              <Pencil size={14} /> Editar dados
+            </button>
+            <button className="modal-close" onClick={onClose}><X size={18} /></button>
+          </div>
+        </div>
+
+        {/* Status */}
+        <div className="detail-block">
+          <div className="detail-block-row">
+            <span className={`contract-status contract-status--${contrato.status}`}>
+              {contrato.status === 'ativo' ? 'Ativo' : 'Inativo'}
+            </span>
+            <button className="btn-icon" onClick={alternarStatus}>
+              {contrato.status === 'ativo' ? <PowerOff size={14} /> : <Power size={14} />}
+              {contrato.status === 'ativo' ? 'Inativar contrato' : 'Reativar contrato'}
+            </button>
+          </div>
+          {contrato.status === 'inativo' && (
+            <p className="form-hint form-hint--muted">
+              Este contrato está inativo e não é contabilizado no score do fornecedor nem nos indicadores gerenciais.
+            </p>
+          )}
+        </div>
+
+        {/* Vigência */}
+        <div className="detail-block">
+          <p className="form-section-title" style={{ marginTop: 0 }}>Vigência</p>
+          <div className="detail-block-row">
+            <div>
+              <span className="detail-label">Início</span>
+              <span className="detail-value">{formatarDataBR(contrato.vigenciaInicio)}</span>
+            </div>
+            <div>
+              <span className="detail-label">Fim</span>
+              <span className="detail-value">{formatarDataBR(contrato.vigenciaFim)}</span>
+            </div>
+            <div>
+              <BadgeVigencia contrato={contrato} />
+            </div>
+          </div>
+
+          {contrato.status === 'ativo' && (status === 'alerta' || status === 'vencido') && (
+            <p className="form-hint form-hint--warning">
+              {status === 'vencido'
+                ? `Este contrato venceu há ${Math.abs(dias ?? 0)} dia(s). Renove a vigência ou inative o contrato.`
+                : `Faltam ${dias} dia(s) para o fim da vigência — renove até ${formatarDataBR(contrato.vigenciaFim)} para evitar interrupção.`}
+            </p>
+          )}
+
+          <div className="detail-block-row" style={{ marginTop: 10 }}>
+            <button className="btn-secondary btn-secondary--sm" onClick={() => setMostrarProrrogacao((v) => !v)}>
+              <RefreshCw size={13} /> Prorrogar / Renovar vigência
+            </button>
+            <div className="form-group" style={{ gap: 3 }}>
+              <label className="form-label" style={{ fontSize: 11 }}>Alertar com quantos dias de antecedência?</label>
+              <select
+                className="filter-select-plain"
+                style={{ minWidth: 110, padding: '5px 10px' }}
+                value={contrato.alertaDiasAntes ?? ALERTA_DIAS_PADRAO}
+                onChange={(e) => alterarAlerta(Number(e.target.value))}
+              >
+                {[15, 30, 45, 60, 90].map((d) => (
+                  <option key={d} value={d}>{d} dias</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {mostrarProrrogacao && (
+            <div className="inline-form">
+              <div className="form-group">
+                <label className="form-label">Nova data de vigência fim</label>
+                <input className="form-input" type="date" value={novaData} onChange={(e) => setNovaData(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Motivo / observação (opcional)</label>
+                <input className="form-input" placeholder="Ex: Aditivo de prazo nº 02" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+              </div>
+              <div className="modal-actions" style={{ marginTop: 0 }}>
+                <button className="btn-secondary" onClick={() => setMostrarProrrogacao(false)}>Cancelar</button>
+                <button className="btn-primary" onClick={confirmarProrrogacao}>Confirmar prorrogação</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Anexos */}
+        <div className="detail-block">
+          <p className="form-section-title" style={{ marginTop: 0 }}>
+            Contratos Anexados {anexosAtuais.length > 0 && `(${anexosAtuais.length})`}
+          </p>
+
+          {anexosAtuais.length > 0 && (
+            <div className="anexo-list">
+              {anexosAtuais.map((anexo) => (
+                <div key={anexo.id} className="anexo-item">
+                  <Paperclip size={13} />
+                  <a className="anexo-item-nome anexo-item-link" href={anexo.url} target="_blank" rel="noreferrer" download={anexo.nome}>
+                    {anexo.nome} <ExternalLink size={11} />
+                  </a>
+                  <button type="button" className="anexo-item-remove" onClick={() => removerAnexo(anexo)} aria-label="Remover anexo">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <label className="file-upload-box" style={{ marginTop: anexosAtuais.length > 0 ? 10 : 0 }}>
+            <Upload size={16} />
+            <span>{enviandoArquivo ? 'Enviando...' : 'Anexar mais arquivos (PDF, imagem ou documento, até 4MB cada)'}</span>
+            <input type="file" multiple accept=".pdf,.doc,.docx,image/*" className="file-upload-input" onChange={handleArquivos} />
+          </label>
+          {erroArquivo && <span className="form-hint form-hint--danger">{erroArquivo}</span>}
+        </div>
+
+        {/* Histórico */}
+        <div className="detail-block">
+          <p className="form-section-title" style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <History size={14} /> Histórico do contrato
+          </p>
+          <div className="historico-list">
+            {historicoOrdenado.length === 0 && (
+              <p className="empty-state-sm">Sem eventos registrados ainda.</p>
+            )}
+            {historicoOrdenado.map((ev) => (
+              <div key={ev.id} className="historico-item">
+                <span className={`historico-tag historico-tag--${ev.tipo}`}>{rotuloTipoHistorico[ev.tipo]}</span>
+                <div className="historico-item-body">
+                  <p className="historico-desc">{ev.descricao}</p>
+                  <p className="historico-data">
+                    {new Date(ev.data).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="modal-actions">
+          <button className="btn-secondary" onClick={onClose}>Fechar</button>
         </div>
       </div>
     </div>
@@ -269,31 +711,50 @@ function ModalContrato({
 // ── Card do Fornecedor ────────────────────────────────────────────
 function FornecedorCard({
   fornecedor,
-  contratos,
+  contratosFornecedor,
+  contratosExibidos,
+  forcarAberto,
   onAddContrato,
+  onAbrirContrato,
+  onEditarFornecedor,
+  onEditarContrato,
 }: {
   fornecedor: Fornecedor;
-  contratos: Contrato[];
+  contratosFornecedor: Contrato[];
+  contratosExibidos: Contrato[];
+  forcarAberto: boolean;
   onAddContrato: (f: Fornecedor) => void;
+  onAbrirContrato: (c: Contrato) => void;
+  onEditarFornecedor: (f: Fornecedor) => void;
+  onEditarContrato: (c: Contrato) => void;
 }) {
-  const [aberto, setAberto] = useState(false);
+  const { scoreFornecedor } = useData();
+  const [abertoLocal, setAbertoLocal] = useState(false);
+  const aberto = forcarAberto || abertoLocal;
+
+  const contratosAtivos = contratosFornecedor.filter((c) => c.status === 'ativo');
+  const contratosInativos = contratosFornecedor.filter((c) => c.status === 'inativo');
+  const score = scoreFornecedor(fornecedor.id);
 
   return (
     <div className={`supplier-card-wrapper ${aberto ? 'supplier-card-wrapper--open' : ''}`}>
       {/* Cabeçalho clicável */}
-      <div className="supplier-card" onClick={() => setAberto(!aberto)}>
+      <div className="supplier-card" onClick={() => setAbertoLocal((v) => !v)}>
         <div className="supplier-card-icon">
           <Building2 size={20} strokeWidth={1.5} />
         </div>
         <div className="supplier-card-info">
           <div className="supplier-card-name">{fornecedor.nome}</div>
           <div className="supplier-card-meta">
-            CNPJ: {fornecedor.cnpj} · {contratos.length} contrato{contratos.length !== 1 ? 's' : ''}
+            CNPJ: {fornecedor.cnpj} · {contratosFornecedor.length} contrato{contratosFornecedor.length !== 1 ? 's' : ''}
+            {contratosInativos.length > 0 && (
+              <span className="text-muted"> · {contratosInativos.length} inativo{contratosInativos.length !== 1 ? 's' : ''}</span>
+            )}
           </div>
         </div>
         <div className="supplier-card-score">
-          <span className="supplier-score-value">{fornecedor.score}</span>
-          <span className="supplier-score-label">pontos</span>
+          <span className="supplier-score-value">{score ?? '—'}</span>
+          <span className="supplier-score-label">{score !== null ? 'pontos' : 'sem contrato ativo'}</span>
         </div>
         {aberto
           ? <ChevronDown size={18} className="supplier-card-arrow" />
@@ -307,7 +768,9 @@ function FornecedorCard({
           <div className="supplier-detail-header">
             <span className="supplier-detail-section">Contratos</span>
             <div className="supplier-detail-actions">
-              <button className="btn-icon"><Pencil size={14} /> Editar</button>
+              <button className="btn-icon" onClick={(e) => { e.stopPropagation(); onEditarFornecedor(fornecedor); }}>
+                <Pencil size={14} /> Editar
+              </button>
               <button className="btn-primary btn-primary--sm" onClick={(e) => { e.stopPropagation(); onAddContrato(fornecedor); }}>
                 <Plus size={14} /> Contrato
               </button>
@@ -337,20 +800,39 @@ function FornecedorCard({
 
           {/* Lista de contratos */}
           <div className="contract-list">
-            {contratos.length === 0 && (
-              <p className="empty-state-sm">Nenhum contrato vinculado.</p>
+            {contratosExibidos.length === 0 && (
+              <p className="empty-state-sm">Nenhum contrato encontrado para o filtro atual.</p>
             )}
-            {contratos.map((c) => (
-              <div key={c.id} className="contract-item">
+            {contratosExibidos.map((c) => (
+              <div key={c.id} className="contract-item" onClick={() => onAbrirContrato(c)}>
                 <div className="contract-item-icon">
                   <FileText size={15} strokeWidth={1.5} />
                 </div>
                 <div className="contract-item-body">
-                  <div className="contract-item-num">{c.numero}</div>
+                  <div className="contract-item-num">
+                    <span
+                      className={`status-dot-only status-dot-only--${c.faixa}`}
+                      title={`Score: ${c.score} pontos`}
+                    />
+                    {c.numero}
+                    {!!c.anexos?.length && (
+                      <span className="contract-item-anexo-icon" title={`${c.anexos.length} anexo(s)`}>
+                        <Paperclip size={12} /> {c.anexos.length}
+                      </span>
+                    )}
+                  </div>
                   <div className="contract-item-meta">
                     {[c.objeto, c.unidade].filter(Boolean).join(' · ')}
                   </div>
                 </div>
+                <BadgeVigencia contrato={c} />
+                <button
+                  className="contract-item-edit-btn"
+                  title="Editar dados do contrato"
+                  onClick={(e) => { e.stopPropagation(); onEditarContrato(c); }}
+                >
+                  <Pencil size={13} />
+                </button>
                 <span className={`contract-status contract-status--${c.status}`}>
                   {c.status === 'ativo' ? 'Ativo' : 'Inativo'}
                 </span>
@@ -365,32 +847,35 @@ function FornecedorCard({
 
 // ── Página Principal ──────────────────────────────────────────────
 export default function Cadastro() {
-  const [busca, setBusca] = useState('');
+  const { fornecedores, contratos } = useData();
+  const [buscaFornecedor, setBuscaFornecedor] = useState('');
+  const [buscaContrato, setBuscaContrato] = useState('');
+  const [statusFiltro, setStatusFiltro] = useState<'todos' | 'ativo' | 'inativo'>('todos');
   const [showModalForn, setShowModalForn] = useState(false);
+  const [fornecedorEditando, setFornecedorEditando] = useState<Fornecedor | null>(null);
   const [modalContrato, setModalContrato] = useState<Fornecedor | null>(null);
-  const [listaForn, setListaForn] = useState<Fornecedor[]>(dadosIniciais);
-  const [listaContratos, setListaContratos] = useState<Contrato[]>(dadosContratos);
+  const [contratoEditando, setContratoEditando] = useState<Contrato | null>(null);
+  const [contratoDetalheId, setContratoDetalheId] = useState<string | null>(null);
 
-  const filtrados = listaForn.filter(
-    (f) =>
-      f.nome.toLowerCase().includes(busca.toLowerCase()) ||
-      f.cnpj.includes(busca)
-  );
+  const contratoDetalhe = contratos.find((c) => c.id === contratoDetalheId) ?? null;
 
-  const handleAddFornecedor = (f: Fornecedor) => {
-    setListaForn([...listaForn, f]);
-    setShowModalForn(false);
-  };
+  const filtroContratoAtivo = buscaContrato.trim() !== '' || statusFiltro !== 'todos';
 
-  const handleAddContrato = (c: Contrato) => {
-    setListaContratos([...listaContratos, c]);
-    setListaForn((prev) =>
-      prev.map((f) =>
-        f.id === c.fornecedorId ? { ...f, contratos: f.contratos + 1 } : f
-      )
-    );
-    setModalContrato(null);
-  };
+  const contratosFiltrados = contratos.filter((c) => {
+    const matchStatus = statusFiltro === 'todos' || c.status === statusFiltro;
+    const matchNumero = !buscaContrato || c.numero.toLowerCase().includes(buscaContrato.toLowerCase());
+    return matchStatus && matchNumero;
+  });
+
+  const idsFornecedorComContrato = new Set(contratosFiltrados.map((c) => c.fornecedorId));
+
+  const fornecedoresFiltrados = fornecedores.filter((f) => {
+    const matchFornecedor =
+      f.nome.toLowerCase().includes(buscaFornecedor.toLowerCase()) ||
+      f.cnpj.includes(buscaFornecedor);
+    const matchContrato = !filtroContratoAtivo || idsFornecedorComContrato.has(f.id);
+    return matchFornecedor && matchContrato;
+  });
 
   return (
     <div className="page">
@@ -406,12 +891,31 @@ export default function Cadastro() {
           <Search size={16} className="search-icon" />
           <input
             type="text"
-            placeholder="Buscar por nome ou CNPJ..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar fornecedor por nome ou CNPJ..."
+            value={buscaFornecedor}
+            onChange={(e) => setBuscaFornecedor(e.target.value)}
             className="search-input"
           />
         </div>
+        <div className="search-bar">
+          <Search size={16} className="search-icon" />
+          <input
+            type="text"
+            placeholder="Buscar por número do contrato..."
+            value={buscaContrato}
+            onChange={(e) => setBuscaContrato(e.target.value)}
+            className="search-input"
+          />
+        </div>
+        <select
+          className="filter-select-input"
+          value={statusFiltro}
+          onChange={(e) => setStatusFiltro(e.target.value as 'todos' | 'ativo' | 'inativo')}
+        >
+          <option value="todos">Todos os status</option>
+          <option value="ativo">Somente ativos</option>
+          <option value="inativo">Somente inativos</option>
+        </select>
         <button className="btn-primary" onClick={() => setShowModalForn(true)}>
           <Plus size={16} />
           Novo Fornecedor
@@ -419,30 +923,56 @@ export default function Cadastro() {
       </div>
 
       <div className="list-cards">
-        {filtrados.map((f) => (
+        {fornecedoresFiltrados.map((f) => (
           <FornecedorCard
             key={f.id}
             fornecedor={f}
-            contratos={listaContratos.filter((c) => c.fornecedorId === f.id)}
+            contratosFornecedor={contratos.filter((c) => c.fornecedorId === f.id)}
+            contratosExibidos={contratosFiltrados.filter((c) => c.fornecedorId === f.id)}
+            forcarAberto={filtroContratoAtivo}
             onAddContrato={(forn) => setModalContrato(forn)}
+            onAbrirContrato={(c) => setContratoDetalheId(c.id)}
+            onEditarFornecedor={(forn) => setFornecedorEditando(forn)}
+            onEditarContrato={(c) => setContratoEditando(c)}
           />
         ))}
-        {filtrados.length === 0 && (
-          <div className="empty-state">Nenhum fornecedor encontrado.</div>
+        {fornecedoresFiltrados.length === 0 && (
+          <div className="empty-state">Nenhum fornecedor ou contrato encontrado para os filtros atuais.</div>
         )}
       </div>
 
       {showModalForn && (
-        <ModalFornecedor onClose={() => setShowModalForn(false)} onSave={handleAddFornecedor} />
+        <ModalFornecedor onClose={() => setShowModalForn(false)} />
+      )}
+
+      {fornecedorEditando && (
+        <ModalFornecedor fornecedorParaEditar={fornecedorEditando} onClose={() => setFornecedorEditando(null)} />
       )}
 
       {modalContrato && (
         <ModalContrato
-          fornecedores={listaForn}
+          fornecedores={fornecedores}
           fornecedorId={modalContrato.id}
           fornecedorNome={modalContrato.nome}
           onClose={() => setModalContrato(null)}
-          onSave={handleAddContrato}
+        />
+      )}
+
+      {contratoEditando && (
+        <ModalContrato
+          fornecedores={fornecedores}
+          fornecedorId={contratoEditando.fornecedorId}
+          fornecedorNome={contratoEditando.fornecedorNome}
+          contratoParaEditar={contratoEditando}
+          onClose={() => setContratoEditando(null)}
+        />
+      )}
+
+      {contratoDetalhe && (
+        <ModalDetalheContrato
+          contrato={contratoDetalhe}
+          onClose={() => setContratoDetalheId(null)}
+          onEditar={(c) => { setContratoDetalheId(null); setContratoEditando(c); }}
         />
       )}
     </div>

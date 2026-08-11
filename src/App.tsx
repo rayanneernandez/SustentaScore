@@ -6,20 +6,23 @@ import Indicadores from './pages/Indicadores';
 import Ocorrencias from './pages/Ocorrencias';
 import CalculoScore from './pages/CalculoScore';
 import MedicaoPagamento from './pages/MedicaoPagamento';
+import { DataProvider } from './context/DataContext';
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="cadastro" element={<Cadastro />} />
-          <Route path="indicadores" element={<Indicadores />} />
-          <Route path="ocorrencias" element={<Ocorrencias />} />
-          <Route path="score" element={<CalculoScore />} />
-          <Route path="medicao" element={<MedicaoPagamento />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <DataProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="cadastro" element={<Cadastro />} />
+            <Route path="indicadores" element={<Indicadores />} />
+            <Route path="ocorrencias" element={<Ocorrencias />} />
+            <Route path="score" element={<CalculoScore />} />
+            <Route path="medicao" element={<MedicaoPagamento />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </DataProvider>
   );
 }

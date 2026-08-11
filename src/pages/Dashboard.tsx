@@ -6,6 +6,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
   PieChart,
   Pie,
@@ -20,9 +21,9 @@ import {
   Gauge,
   CalendarCheck,
   DollarSign,
-  AlertTriangle,
-  ChevronRight,
-  Info,
+  ChevronDown,
+  ChevronUp,
+  Award,
   Calendar,
   Filter,
   Maximize2,
@@ -32,9 +33,9 @@ import {
   scoreHistorico,
   ocorrenciasPorTipo,
   distribuicaoScore,
-  contratos,
   ocorrencias,
 } from '../data/mockData';
+import { useData } from '../context/DataContext';
 
 const faixasPagamento = [
   { range: '500 a 450', percentual: '100%', status: 'Verde', color: 'verde' },
@@ -44,8 +45,12 @@ const faixasPagamento = [
 
 const mesesAbreviados = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
-const totalScoreGlobal = contratos.reduce((total, item) => total + item.score, 0);
-const mediaScoreGlobal = Math.round(totalScoreGlobal / contratos.length);
+// Paleta categórica validada (ordem fixa, distinguível em daltonismo) — usada para as
+// linhas de "evolução do score por unidade". Acima de 6 unidades, o excedente é
+// agrupado em "Outras unidades" na cor neutra, para não poluir o gráfico.
+const CORES_UNIDADE = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7'];
+const COR_OUTRAS_UNIDADES = '#9CA3AF';
+const MAX_LINHAS_UNIDADE = 6;
 
 function normalizarPeriodoDaData(data: string) {
   const [ano, mes] = data.split('-');
@@ -65,6 +70,22 @@ export default function Dashboard() {
   const [fornecedor, setFornecedor] = useState('Todos');
   const [periodo, setPeriodo] = useState('Todos');
   const [expandido, setExpandido] = useState(false);
+  const [modoEvolucao, setModoEvolucao] = useState<'geral' | 'unidade'>('geral');
+  const [mostrarTodosMenoresScore, setMostrarTodosMenoresScore] = useState(false);
+
+  const { contratos: todosContratos } = useData();
+
+  // Contratos inativos não são contabilizados no score, nos indicadores nem nos alertas do painel.
+  const contratos = useMemo(
+    () => todosContratos.filter((item) => item.status === 'ativo'),
+    [todosContratos],
+  );
+
+  const mediaScoreGlobal = useMemo(() => {
+    if (!contratos.length) return 0;
+    const totalScoreGlobal = contratos.reduce((total, item) => total + item.score, 0);
+    return Math.round(totalScoreGlobal / contratos.length);
+  }, [contratos]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -77,18 +98,33 @@ export default function Dashboard() {
 
   const opcoesOrgao = useMemo(
     () => ['Todos', ...new Set(contratos.map((item) => item.unidade).filter(Boolean) as string[])],
-    [],
+    [contratos],
   );
 
   const opcoesContrato = useMemo(
     () => ['Todos', ...contratos.map((item) => item.numero)],
-    [],
+    [contratos],
   );
 
+  // O filtro de Fornecedor fica atrelado ao Órgão/Unidade selecionado — só lista
+  // fornecedores que têm contrato naquela unidade.
   const opcoesFornecedor = useMemo(
-    () => ['Todos', ...new Set(contratos.map((item) => item.fornecedorNome))],
-    [],
+    () => [
+      'Todos',
+      ...new Set(
+        contratos
+          .filter((item) => orgao === 'Todos' || item.unidade === orgao)
+          .map((item) => item.fornecedorNome),
+      ),
+    ],
+    [contratos, orgao],
   );
+
+  useEffect(() => {
+    if (fornecedor !== 'Todos' && !opcoesFornecedor.includes(fornecedor)) {
+      setFornecedor('Todos');
+    }
+  }, [opcoesFornecedor, fornecedor]);
 
   const opcoesPeriodo = useMemo(
     () => ['Todos', ...scoreHistorico.map((item) => item.mes)],
@@ -103,7 +139,7 @@ export default function Dashboard() {
         const matchFornecedor = fornecedor === 'Todos' || item.fornecedorNome === fornecedor;
         return matchOrgao && matchContrato && matchFornecedor;
       }),
-    [contrato, fornecedor, orgao],
+    [contrato, fornecedor, orgao, contratos],
   );
 
   const idsContratosFiltrados = useMemo(
@@ -190,6 +226,80 @@ export default function Dashboard() {
     return indicePeriodo >= 0 ? serie.slice(0, indicePeriodo + 1) : serie;
   }, [periodo, scoreMedio]);
 
+  /**
+   * Evolução do score aplicada por unidade — usa a mesma técnica da série geral
+   * (desloca a tendência de `scoreHistorico` pela diferença entre a média da
+   * unidade e a média global), só que uma linha por unidade em vez de uma única
+   * linha agregada. Limita a `MAX_LINHAS_UNIDADE` linhas nomeadas e agrupa o
+   * restante em "Outras unidades" para o gráfico não ficar poluído.
+   */
+  const { historicoPorUnidade, unidadesDoGrafico } = useMemo(() => {
+    const porUnidade = new Map<string, { total: number; qtd: number }>();
+    for (const c of contratosFiltrados) {
+      if (!c.unidade) continue;
+      const atual = porUnidade.get(c.unidade) ?? { total: 0, qtd: 0 };
+      atual.total += c.score;
+      atual.qtd += 1;
+      porUnidade.set(c.unidade, atual);
+    }
+
+    const unidadesOrdenadas = Array.from(porUnidade.entries())
+      .map(([nome, { total, qtd }]) => ({ nome, media: total / qtd, qtd }))
+      .sort((a, b) => b.qtd - a.qtd || b.media - a.media);
+
+    const principais = unidadesOrdenadas.slice(0, MAX_LINHAS_UNIDADE);
+    const restantes = unidadesOrdenadas.slice(MAX_LINHAS_UNIDADE);
+
+    const nomesGrafico = principais.map((u) => u.nome);
+    if (restantes.length) nomesGrafico.push('Outras unidades');
+
+    const mediaRestantes = restantes.length
+      ? restantes.reduce((soma, u) => soma + u.media, 0) / restantes.length
+      : null;
+
+    const serie = scoreHistorico.map((item) => {
+      const linha: Record<string, string | number> = { mes: item.mes };
+      for (const u of principais) {
+        linha[u.nome] = limitarScore(item.score + (u.media - mediaScoreGlobal));
+      }
+      if (mediaRestantes !== null) {
+        linha['Outras unidades'] = limitarScore(item.score + (mediaRestantes - mediaScoreGlobal));
+      }
+      return linha;
+    });
+
+    const serieFinal =
+      periodo === 'Todos'
+        ? serie
+        : (() => {
+            const indicePeriodo = serie.findIndex((item) => item.mes === periodo);
+            return indicePeriodo >= 0 ? serie.slice(0, indicePeriodo + 1) : serie;
+          })();
+
+    return { historicoPorUnidade: serieFinal, unidadesDoGrafico: nomesGrafico };
+  }, [contratosFiltrados, mediaScoreGlobal, periodo]);
+
+  /** Unidade com a maior média de score entre os contratos ativos — independe dos
+   * filtros de Órgão/Unidade (senão a comparação perde sentido), mas respeita
+   * fornecedor/contrato/período selecionados. */
+  const unidadeMaisSustentavel = useMemo(() => {
+    const porUnidade = new Map<string, { total: number; qtd: number }>();
+    for (const c of contratos) {
+      if (!c.unidade) continue;
+      const atual = porUnidade.get(c.unidade) ?? { total: 0, qtd: 0 };
+      atual.total += c.score;
+      atual.qtd += 1;
+      porUnidade.set(c.unidade, atual);
+    }
+
+    let melhor: { nome: string; media: number } | null = null;
+    for (const [nome, { total, qtd }] of porUnidade) {
+      const media = Math.round(total / qtd);
+      if (!melhor || media > melhor.media) melhor = { nome, media };
+    }
+    return melhor;
+  }, [contratos]);
+
   const ocorrenciasAgrupadas = useMemo(() => {
     const totais = ocorrenciasFiltradas.reduce<Record<string, number>>((acc, item) => {
       acc[item.categoria] = (acc[item.categoria] ?? 0) + 1;
@@ -203,36 +313,14 @@ export default function Dashboard() {
     return agrupadas.length ? agrupadas : [{ tipo: 'Sem registros', total: 0 }];
   }, [ocorrenciasFiltradas]);
 
-  const menoresFornecedores = useMemo(
-    () => [...contratosFiltrados].sort((a, b) => a.score - b.score).slice(0, 5),
+  const menoresFornecedoresTodos = useMemo(
+    () => [...contratosFiltrados].sort((a, b) => a.score - b.score),
     [contratosFiltrados],
   );
 
-  const alertasFiltrados = useMemo(() => {
-    const abaixoDe350 = contratosFiltrados.filter((item) => item.score < 350).length;
-    const proximosVencimentos = contratosFiltrados
-      .filter((item) => item.vigencia)
-      .sort((a, b) => (a.vigencia ?? '').localeCompare(b.vigencia ?? ''))
-      .slice(0, 3).length;
-
-    return [
-      {
-        tipo: 'erro',
-        mensagem: `${abaixoDe350} contratos com score abaixo de 350 pontos.`,
-        detalhe: 'Priorize plano de ação para contratos em faixa crítica.',
-      },
-      {
-        tipo: 'aviso',
-        mensagem: `${ocorrenciasFiltradas.length} ocorrências registradas no recorte atual.`,
-        detalhe: 'Abra o detalhamento para verificar contratos impactados.',
-      },
-      {
-        tipo: 'info',
-        mensagem: `${proximosVencimentos} contratos próximos do vencimento da medição.`,
-        detalhe: 'Acompanhe medições pendentes para evitar atraso no fechamento.',
-      },
-    ];
-  }, [contratosFiltrados, ocorrenciasFiltradas.length]);
+  const menoresFornecedores = mostrarTodosMenoresScore
+    ? menoresFornecedoresTodos
+    : menoresFornecedoresTodos.slice(0, 5);
 
   const totalOcorrencias = useMemo(
     () => ocorrenciasAgrupadas.reduce((sum, item) => sum + item.total, 0),
@@ -362,6 +450,12 @@ export default function Dashboard() {
           <div className="kpi-label">Percentual médio</div>
           <div className="kpi-title">PAGAMENTO MÉDIO</div>
         </div>
+        <div className="kpi-card">
+          <div className="kpi-icon"><Award size={24} strokeWidth={1.5} /></div>
+          <div className="kpi-value kpi-value--sm">{unidadeMaisSustentavel?.nome ?? '—'}</div>
+          <div className="kpi-label">{unidadeMaisSustentavel ? `${unidadeMaisSustentavel.media} pontos em média` : 'Sem dados suficientes'}</div>
+          <div className="kpi-title">UNIDADE MAIS SUSTENTÁVEL</div>
+        </div>
       </div>
 
       {/* Charts Row */}
@@ -403,28 +497,72 @@ export default function Dashboard() {
 
         {/* Line Chart */}
         <div className="chart-card chart-card--wide">
-          <h3 className="chart-title">EVOLUÇÃO DO SCORE MÉDIO</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={historicoFiltrado} margin={{ top: 20, right: 20, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E1D8" />
-              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
-              <YAxis domain={[0, 500]} ticks={[0, 100, 200, 300, 400, 500]} tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
-              <Tooltip
-                contentStyle={{ borderRadius: 8, border: '1px solid #E5E1D8', fontSize: 12 }}
-                labelStyle={{ color: '#1C1C1C', fontWeight: 600 }}
-              />
-              <Line
-                type="monotone"
-                dataKey="score"
-                stroke="#3D5C3E"
-                strokeWidth={2.5}
-                dot={{ fill: '#3D5C3E', r: 4 }}
-                activeDot={{ r: 6 }}
+          <div className="chart-card-header">
+            <h3 className="chart-title">EVOLUÇÃO DO SCORE MÉDIO</h3>
+            <div className="segmented-toggle segmented-toggle--sm">
+              <button
+                type="button"
+                className={`segmented-toggle-btn ${modoEvolucao === 'geral' ? 'segmented-toggle-btn--active' : ''}`}
+                onClick={() => setModoEvolucao('geral')}
               >
-                <LabelList dataKey="score" position="top" style={{ fontSize: 11, fill: '#3D5C3E', fontWeight: 600 }} />
-              </Line>
-            </LineChart>
-          </ResponsiveContainer>
+                Geral
+              </button>
+              <button
+                type="button"
+                className={`segmented-toggle-btn ${modoEvolucao === 'unidade' ? 'segmented-toggle-btn--active' : ''}`}
+                onClick={() => setModoEvolucao('unidade')}
+              >
+                Por unidade
+              </button>
+            </div>
+          </div>
+          {modoEvolucao === 'geral' ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={historicoFiltrado} margin={{ top: 20, right: 20, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E1D8" />
+                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 500]} ticks={[0, 100, 200, 300, 400, 500]} tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ borderRadius: 8, border: '1px solid #E5E1D8', fontSize: 12 }}
+                  labelStyle={{ color: '#1C1C1C', fontWeight: 600 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="score"
+                  stroke="#3D5C3E"
+                  strokeWidth={2.5}
+                  dot={{ fill: '#3D5C3E', r: 4 }}
+                  activeDot={{ r: 6 }}
+                >
+                  <LabelList dataKey="score" position="top" style={{ fontSize: 11, fill: '#3D5C3E', fontWeight: 600 }} />
+                </Line>
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={historicoPorUnidade} margin={{ top: 12, right: 20, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E1D8" />
+                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 500]} ticks={[0, 100, 200, 300, 400, 500]} tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ borderRadius: 8, border: '1px solid #E5E1D8', fontSize: 12 }}
+                  labelStyle={{ color: '#1C1C1C', fontWeight: 600 }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} iconSize={9} />
+                {unidadesDoGrafico.map((nome, i) => (
+                  <Line
+                    key={nome}
+                    type="monotone"
+                    dataKey={nome}
+                    stroke={nome === 'Outras unidades' ? COR_OUTRAS_UNIDADES : CORES_UNIDADE[i % CORES_UNIDADE.length]}
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    activeDot={{ r: 5 }}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
         {/* Horizontal Bar Chart */}
@@ -465,6 +603,7 @@ export default function Dashboard() {
         {/* Faixas de Pagamento */}
         <div className="table-card">
           <h3 className="chart-title">FAIXAS DE PAGAMENTO</h3>
+          <div className="table-scroll">
           <table className="payment-table">
             <thead>
               <tr>
@@ -488,18 +627,20 @@ export default function Dashboard() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         {/* Menores Scores */}
         <div className="table-card table-card--wide">
           <h3 className="chart-title">FORNECEDORES COM MENOR SCORE NO MÊS</h3>
+          <div className="table-scroll">
           <table className="suppliers-table">
             <thead>
               <tr>
                 <th>Fornecedor</th>
+                <th>Unidade</th>
                 <th>Contrato</th>
                 <th>Score</th>
-                <th>Faixa de Pagamento</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -508,9 +649,9 @@ export default function Dashboard() {
                 menoresFornecedores.map((c) => (
                   <tr key={c.id}>
                     <td>{c.fornecedorNome}</td>
+                    <td>{c.unidade || '—'}</td>
                     <td>{c.numero}</td>
                     <td>{c.score}</td>
-                    <td>{c.pagamento}%</td>
                     <td>
                       <span className={`status-dot-only status-dot-only--${c.faixa}`} />
                     </td>
@@ -523,34 +664,15 @@ export default function Dashboard() {
               )}
             </tbody>
           </table>
-          <div className="table-footer">
-            <button className="btn-link">
-              Ver todos <ChevronRight size={14} />
-            </button>
           </div>
-        </div>
-
-        {/* Alertas */}
-        <div className="alerts-card">
-          <h3 className="chart-title">ALERTAS</h3>
-          <div className="alerts-list">
-            {alertasFiltrados.map((a, i) => (
-              <div key={i} className={`alert-item alert-item--${a.tipo}`}>
-                <div className="alert-icon">
-                  {a.tipo === 'info' ? (
-                    <Info size={16} />
-                  ) : (
-                    <AlertTriangle size={16} />
-                  )}
-                </div>
-                <div className="alert-body">
-                  <p className="alert-msg">{a.mensagem}</p>
-                  <p className="alert-detail">{a.detalhe}</p>
-                </div>
-                <ChevronRight size={16} className="alert-arrow" />
-              </div>
-            ))}
-          </div>
+          {menoresFornecedoresTodos.length > 5 && (
+            <div className="table-footer">
+              <button className="btn-link" onClick={() => setMostrarTodosMenoresScore((v) => !v)}>
+                {mostrarTodosMenoresScore ? 'Ver menos' : `Ver todos (${menoresFornecedoresTodos.length})`}
+                {mostrarTodosMenoresScore ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
