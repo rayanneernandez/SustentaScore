@@ -74,10 +74,71 @@ export interface Indicador {
   id: string;
   nome: string;
   descricao: string;
-  categoria: string;
+  /**
+   * ATENÇÃO: este tipo já teve um campo `eixoPDLSId` único (uma "badge" de Eixo PDLS
+   * por Aspecto). Foi removido de novo — a usuária achou confuso ter um Eixo PDLS
+   * "principal" do Aspecto E, ao mesmo tempo, vários Eixos PDLS internos (com seus
+   * Indicadores de Desempenho, ver `IndicadorPDLS`) para o mesmo Aspecto. Agora só
+   * existe UM jeito de associar Eixo PDLS a um Aspecto: através de `IndicadorPDLS`
+   * (`macroindicadorId` + `eixoId`) — os "Eixos PDLS deste Aspecto" são simplesmente
+   * os eixos que têm pelo menos um Indicador de Desempenho cadastrado para ele
+   * (ver `indicadoresPDLSDe` no `DataContext`). Esse cadastro é feito na tela
+   * `Estrutura de Sustentabilidade` (`EstruturaSustentabilidade.tsx`), não mais dentro do detalhe do Aspecto em
+   * `Indicadores.tsx` (que agora só exibe, em modo leitura).
+   */
   tipo: string;
   contratosVinculados: number;
   icone: string;
+}
+
+/**
+ * Um dos 6 Eixos temáticos do PDLS (Plano de Desenvolvimento Local Sustentável).
+ * Um mesmo Eixo pode servir a vários Macroindicadores diferentes — a ligação de fato
+ * entre Macroindicador e Eixo é feita através de cada `IndicadorPDLS` (que carrega os
+ * dois ids), não por um campo fixo no Macroindicador.
+ */
+export interface EixoPDLS {
+  id: string;
+  numero: number;
+  nome: string;
+}
+
+/** Um meio de verificação usado pela fiscalização para comprovar o atendimento de uma meta. */
+export interface MeioVerificacao {
+  id: string;
+  descricao: string;
+}
+
+export type UnidadeMedidaPDLS = 'percentual' | 'quantidade' | 'conformidade' | 'outro';
+
+/**
+ * Indicador de Desempenho do PDLS — a "subcategoria" que aparece dentro de um Eixo,
+ * para um Macroindicador específico. Guarda a meta (ainda sujeita a definição mais
+ * precisa pelo órgão), a unidade de medida e os meios de verificação que a
+ * fiscalização usa para comprovar o cumprimento.
+ */
+export interface IndicadorPDLS {
+  id: string;
+  macroindicadorId: string;
+  eixoId: string;
+  nome: string;
+  /** Meta de referência (PDLS) — texto livre; a metodologia exata ainda pode ser definida pelo órgão. */
+  meta?: string;
+  /** Documento de referência da meta, quando houver. */
+  metaAnexo?: Anexo;
+  unidadeMedida: UnidadeMedidaPDLS;
+  meiosVerificacao: MeioVerificacao[];
+  /** Referência normativa / Objetivo do PDLS (ex: "OB04 – Racionalizar a gestão de resíduos"). */
+  referenciaNormativa?: string;
+  /**
+   * Observações e documentos de apoio (passo 5, opcional, de `EstruturaSustentabilidade.tsx`) —
+   * anotação livre e/ou arquivo anexado quando for útil registrar algo a mais sobre este
+   * Indicador de Desempenho (ex: uma justificativa, um documento de apoio que não é
+   * exatamente um "meio de verificação"). Não confundir com `metaAnexo`, que é especificamente
+   * o documento de referência da meta.
+   */
+  observacoes?: string;
+  anexos?: Anexo[];
 }
 
 /**
@@ -94,7 +155,8 @@ export interface Ocorrencia {
   contratoId: string;
   indicadorId: string;
   indicadorNome: string;
-  categoria: string;
+  /** Eixo PDLS (1 a 6) ao qual esta ocorrência está atrelada. */
+  eixoPDLSId: string;
   descricao: string;
   data: string;
   deducao: number;
@@ -138,4 +200,73 @@ export interface Notificacao {
   urgencia: 'alta' | 'media' | 'baixa';
   link?: string;
   lida: boolean;
+}
+
+/**
+ * Cada tela/seção do sistema que pode ter acesso controlado por perfil. Usada
+ * tanto para montar o menu lateral (esconder o que o perfil não pode ver) quanto
+ * para a grade de permissões na tela de Usuários e Permissões.
+ */
+export type PaginaKey =
+  | 'dashboard'
+  | 'cadastro'
+  | 'indicadores'
+  | 'cadastroPdls'
+  | 'ocorrencias'
+  | 'score'
+  | 'medicao'
+  | 'usuarios'
+  | 'perfis';
+
+/**
+ * Permissão de um perfil sobre uma tela específica. `criar`, `editar` e
+ * `excluir` são independentes entre si — um perfil pode, por exemplo, criar e
+ * editar ocorrências mas não excluir nenhuma.
+ */
+export interface PermissaoPagina {
+  /** Pode ver/acessar a tela. Sem isso, a tela nem aparece no menu, e as outras 3 permissões não têm efeito. */
+  ver: boolean;
+  /** Pode criar novos registros na tela (ex: novo fornecedor, nova ocorrência, novo usuário). */
+  criar: boolean;
+  /** Pode editar registros já existentes na tela. */
+  editar: boolean;
+  /** Pode excluir registros na tela. */
+  excluir: boolean;
+}
+
+/**
+ * Perfil de acesso — substitui o antigo modelo fixo de 'administrador' | 'colaborador'.
+ * Além dos dois perfis padrão (que sempre existem), qualquer novo perfil pode ser
+ * criado com sua própria combinação de telas/permissões, atribuída em
+ * `permissoes` (uma entrada por `PaginaKey`).
+ */
+export interface Perfil {
+  id: string;
+  nome: string;
+  /**
+   * Perfis padrão do sistema (Administrador e Colaborador) — não podem ser
+   * excluídos, pra sempre existir pelo menos um caminho de acesso total e um de
+   * só-leitura. O perfil Administrador padrão também não tem suas permissões
+   * editáveis (sempre acesso total), pra evitar que alguém se tranque fora do
+   * próprio sistema.
+   */
+  padrao?: boolean;
+  permissoes: Record<PaginaKey, PermissaoPagina>;
+}
+
+/**
+ * Usuário do sistema. ATENÇÃO: este é um protótipo de frontend sem backend — o
+ * login aqui é só local (compara com esta lista guardada no navegador) e a senha
+ * fica em texto simples. Não é seguro para produção; existe só para simular o
+ * controle de acesso até haver um banco de dados de verdade por trás.
+ */
+export interface Usuario {
+  id: string;
+  nome: string;
+  email: string;
+  senha: string;
+  /** Cargo/função do usuário na organização (ex: "Fiscal de Contrato") — só informativo. */
+  cargo?: string;
+  /** Id do `Perfil` que define o que este usuário pode ver e editar. */
+  perfilId: string;
 }

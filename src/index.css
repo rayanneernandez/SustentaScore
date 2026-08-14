@@ -229,10 +229,155 @@ html, body, #root {
 
 .sidebar-footer-brand svg { flex-shrink: 0; margin-top: 1px; }
 
+.sidebar-user {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-user-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar-user-nome {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-user-badge {
+  flex-shrink: 0;
+  font-size: 9px;
+  padding: 2px 7px;
+}
+
+.sidebar-user-switch {
+  padding: 0;
+  align-self: flex-start;
+}
+
+.sidebar-user-switch-select {
+  width: 100%;
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+/* Botão que troca "Administrador" ↔ "Colaborador" (e demais perfis, se houver
+ * mais de 2) — substitui o antigo <select> "Ver como X". Um clique alterna pro
+ * próximo perfil da lista (voltando pro próprio no fim do ciclo). */
+.sidebar-role-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sidebar-role-toggle:hover { background: var(--bg); }
+.sidebar-role-toggle svg { color: var(--text-muted); flex-shrink: 0; }
+
+/* ─── Login ──────────────────────────────────────────────────── */
+.login-page {
+  height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px 26px;
+}
+
+.login-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.login-logo-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.login-logo-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.login-heading {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-submit {
+  width: 100%;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.login-hint {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.login-hint-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
 /* ─── Page ───────────────────────────────────────────────────── */
+/* Sem largura fixa: a página ocupa o espaço disponível (até um teto bem alto,
+ * só pra textos não ficarem ilegíveis em monitores ultrawide) e fica
+ * centralizada — antes tinha max-width: 1200px sem margin: auto, o que deixava
+ * uma faixa enorme de espaço vazio à direita em monitores grandes. */
 .page {
   padding: 28px 32px;
-  max-width: 1200px;
+  max-width: 1800px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .page--fullscreen {
@@ -248,6 +393,13 @@ html, body, #root {
   height: 100vh;
 }
 
+/* Só o corpo do dashboard (dentro do wrapper de tela inteira) ignora o `max-width`
+ * do `.page` — quem cuida do tamanho/scroll do elemento de tela inteira em si é o
+ * `page--fullscreen` acima, no wrapper externo. */
+.dashboard-body--fullscreen {
+  max-width: none;
+}
+
 .page-header {
   display: flex;
   align-items: flex-start;
@@ -255,9 +407,13 @@ html, body, #root {
   margin-bottom: 20px;
 }
 
+/* Fica FORA do `.page` (ver `Dashboard.tsx`) — é irmão dele dentro do wrapper do
+ * dashboard, então ocupa 100% da largura do `.main-content`, sem as margens
+ * esquerda/direita que apareciam quando estava dentro do `.page` e este batia no
+ * `max-width` (centralizando com `margin:auto` e deixando o fundo cinza-claro do
+ * `.main-content` visível dos dois lados em monitores muito largos). */
 .dashboard-header {
   background: #fff;
-  margin: -28px -32px 0;
   padding: 20px 32px;
   border-bottom: 1px solid var(--border);
 }
@@ -294,6 +450,12 @@ html, body, #root {
   margin-top: 3px;
 }
 
+.dashboard-last-update-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .dashboard-last-update {
   display: flex;
   align-items: flex-start;
@@ -303,6 +465,57 @@ html, body, #root {
   text-align: right;
   line-height: 1.5;
 }
+
+/* ─── Exportar relatório (Dashboard) ─────────────────────────────
+ * Dropdown simples: botão + menu flutuante alinhado à direita, com um overlay
+ * transparente por baixo (mesmo padrão do `.notif-overlay`) só pra fechar ao
+ * clicar fora — aqui não precisa encolher o conteúdo, é um menu curto. */
+.export-menu-wrapper {
+  position: relative;
+}
+
+.export-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: transparent;
+}
+
+.export-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1000;
+  min-width: 230px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.export-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.export-menu-item:hover { background: var(--bg); }
+.export-menu-item:disabled { opacity: 0.5; cursor: not-allowed; }
+.export-menu-item svg { color: var(--text-muted); flex-shrink: 0; }
 
 /* ─── Filters ────────────────────────────────────────────────── */
 .filters-bar {
@@ -576,14 +789,16 @@ html, body, #root {
 .table-card--wide { grid-column: span 1; }
 
 .payment-table,
-.suppliers-table {
+.suppliers-table,
+.data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12.5px;
 }
 
 .payment-table th,
-.suppliers-table th {
+.suppliers-table th,
+.data-table th {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -592,18 +807,83 @@ html, body, #root {
   padding: 6px 8px;
   text-align: left;
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
 
 .payment-table td,
-.suppliers-table td {
+.suppliers-table td,
+.data-table td {
   padding: 10px 8px;
   border-bottom: 1px solid var(--border);
   color: var(--text);
+  vertical-align: middle;
 }
 
 .payment-table tr:last-child td,
-.suppliers-table tr:last-child td {
+.suppliers-table tr:last-child td,
+.data-table tr:last-child td {
   border-bottom: none;
+}
+
+.data-table tr:hover td { background: var(--bg); }
+
+/* ─── Usuários e Permissões ──────────────────────────────────── */
+.data-table-nome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.data-table-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.data-table-icon--admin {
+  background: var(--primary-pale);
+  color: var(--primary);
+}
+
+.data-table-email {
+  color: var(--text-muted);
+}
+
+.data-table-acoes {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.data-table td.data-table-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.perm-grid-col {
+  text-align: center !important;
+  width: 1%;
+}
+
+.perm-grid-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.perm-grid-checkbox:disabled { cursor: not-allowed; opacity: 0.6; }
+
+.section-card-hint {
+  margin: -4px 0 10px;
 }
 
 .table-empty-state {
@@ -736,6 +1016,9 @@ html, body, #root {
   font-weight: 500;
   cursor: pointer;
   transition: background 0.15s;
+  /* Estas classes de botão também são aplicadas a `<Link>` do react-router (que
+   * renderiza uma tag `<a>`) — sem isso, o navegador sublinha o texto por padrão. */
+  text-decoration: none;
 }
 
 .btn-primary:hover { background: var(--primary-light); }
@@ -753,6 +1036,7 @@ html, body, #root {
   font-weight: 500;
   cursor: pointer;
   transition: background 0.15s;
+  text-decoration: none;
 }
 
 .btn-secondary:hover { background: var(--bg); }
@@ -975,6 +1259,17 @@ html, body, #root {
   background: var(--danger-pale);
   border-color: var(--danger);
   color: var(--danger);
+}
+
+.indicator-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.indicator-action-btn:disabled:hover {
+  border-color: var(--border);
+  color: var(--text-muted);
+  background: #fff;
 }
 
 .modal-subtitle {
@@ -1213,6 +1508,201 @@ html, body, #root {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
+}
+
+/* ─── Eixos PDLS e Indicadores de Desempenho (Macroindicadores → detalhe) ──── */
+.eixo-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.eixo-tab {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: #fff;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.eixo-tab--active {
+  background: var(--primary-pale);
+  color: var(--primary);
+  border-color: var(--primary);
+  font-weight: 600;
+}
+
+/* Usado em Estrutura de Sustentabilidade: marca visualmente (bolinha antes do texto) o Eixo PDLS
+ * que já tem pelo menos um Indicador de Desempenho cadastrado para o Aspecto de
+ * Sustentabilidade selecionado — sem depender só da cor de "ativo/selecionado". */
+.eixo-tab--cadastrado::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 6px;
+}
+
+.eixo-nome-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.eixo-nome-atual {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.eixo-nome-row .form-input { flex: 1; min-width: 160px; }
+
+.pdls-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pdls-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--bg);
+}
+
+.pdls-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pdls-card-nome {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pdls-card-muted {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.pdls-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.pdls-card-meta {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.pdls-card-meta em { color: var(--text-muted); font-style: normal; }
+
+.pdls-meios {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.pdls-meios-titulo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.pdls-meios-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.pdls-meios-list li { margin-bottom: 2px; }
+
+.pdls-card-referencia { margin-top: 8px; }
+
+/* ─── Usuários e Permissões ──────────────────────────────────── */
+.usuarios-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.usuario-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.usuario-card-icon {
+  width: 34px;
+  height: 34px;
+  background: var(--bg);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.usuario-card-icon--admin {
+  background: var(--primary-pale);
+  color: var(--primary);
+}
+
+.usuario-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.usuario-card-nome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.usuario-card-email {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usuario-card-voce {
+  font-size: 9px;
+  padding: 2px 6px;
 }
 
 /* ─── Score ──────────────────────────────────────────────────── */
@@ -1741,6 +2231,39 @@ html, body, #root {
 
 .supplier-info-item svg { color: var(--primary); flex-shrink: 0; }
 
+.supplier-score-unidade {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.supplier-score-unidade-titulo {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+}
+
+.supplier-score-unidade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.supplier-score-unidade-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.supplier-score-unidade-nome { color: var(--text); }
+.supplier-score-unidade-valor { color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+
 .contract-list {
   display: flex;
   flex-direction: column;
@@ -1794,6 +2317,19 @@ html, body, #root {
   color: var(--text-muted);
   margin-top: 2px;
 }
+
+.contract-item-score {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.contract-item-score--verde { background: var(--primary-pale); color: var(--primary); }
+.contract-item-score--cinza { background: #F0EFED; color: #4B5563; }
+.contract-item-score--preto { background: #E9E9EB; color: #1F2937; }
 
 .contract-item-edit-btn {
   display: flex;
@@ -1860,7 +2396,6 @@ html, body, #root {
   }
 
   .dashboard-header {
-    margin: -20px -20px 0;
     padding: 16px 20px;
     flex-direction: column;
     gap: 16px;
@@ -1869,6 +2404,11 @@ html, body, #root {
   .dashboard-header-actions {
     width: 100%;
     flex-direction: column;
+  }
+
+  .dashboard-last-update-row {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .dashboard-last-update {
@@ -2064,6 +2604,18 @@ html, body, #root {
   display: flex;
   justify-content: flex-end;
   padding: 14px 32px 0;
+}
+
+/* No Dashboard (telas ≥901px), a faixa superior não tem nenhum conteúdo visível — o
+ * sino já está dentro do cabeçalho da própria página — então fica sem padding, pra o
+ * cabeçalho "Monitoramento de Desempenho..." ficar colado no topo, sem espaço vazio
+ * acima. Só se aplica em desktop: em mobile o botão de abrir o menu lateral precisa
+ * do padding normal (ver override de `.topbar` dentro de `@media (max-width: 768px)`
+ * e o `@media (max-width: 900px)` que mostra `.topbar-menu-btn`). */
+@media (min-width: 901px) {
+  .topbar--dashboard {
+    padding: 0;
+  }
 }
 
 .topbar-menu-btn {
@@ -2294,6 +2846,18 @@ html, body, #root {
   .indicators-grid {
     grid-template-columns: 1fr;
   }
+
+  /* Em telas estreitas, ícone + nome + badges (usado em `Indicadores.tsx` e
+   * `Ocorrencias.tsx`) não cabem numa linha só — deixa quebrar em vez de
+   * espremer tudo em colunas minúsculas lado a lado. */
+  .occurrence-item-header {
+    align-items: flex-start;
+  }
+
+  .occurrence-item-left {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -2357,5 +2921,135 @@ html, body, #root {
 
   .modal {
     padding: 18px;
+  }
+
+  .usuario-card {
+    flex-wrap: wrap;
+  }
+
+  .usuario-card select {
+    flex: 1 1 100%;
+  }
+
+  .login-card {
+    padding: 22px 18px;
+  }
+}
+
+/* ─── Estrutura de Sustentabilidade — barra de passos do wizard ────────────
+ * Só um passo do cadastro em cascata (Objeto → Aspecto → Eixo → Indicador)
+ * fica em tela por vez — a usuária achou os 4 sempre visíveis juntos poluído.
+ * Esta barra também mostra o que já foi selecionado em cada passo anterior
+ * (substitui a antiga trilha/breadcrumb separada) e permite saltar direto pra
+ * qualquer passo já alcançado. */
+.wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.wizard-step {
+  flex: 1 1 200px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+
+.wizard-step:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.wizard-step-num {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wizard-step-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.wizard-step-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wizard-step-value {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wizard-step--active {
+  background: var(--primary-pale);
+  border-color: var(--primary);
+}
+
+.wizard-step--active .wizard-step-num {
+  background: var(--primary);
+  color: #fff;
+}
+
+.wizard-step--active .wizard-step-label {
+  color: var(--primary);
+}
+
+.wizard-step--done .wizard-step-num {
+  background: var(--accent);
+  color: #fff;
+}
+
+.wizard-card {
+  margin-top: 0;
+}
+
+.wizard-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 700px) {
+  .wizard-step {
+    flex: 1 1 45%;
+  }
+
+  .wizard-step-value {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .wizard-step {
+    flex: 1 1 100%;
   }
 }

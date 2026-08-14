@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
-import { Plus, Recycle, Droplets, Zap, Leaf, Wind, Users, Pencil, Trash2, X, Filter, FileText } from 'lucide-react';
-import { indicadores } from '../data/mockData';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Recycle, Droplets, Zap, Leaf, Wind, Users, X, Filter, FileText, ClipboardCheck, ArrowRight, Paperclip,
+} from 'lucide-react';
 import { useData } from '../context/DataContext';
-import type { Indicador } from '../types';
+import type { Indicador, UnidadeMedidaPDLS } from '../types';
 
 const iconMap: Record<string, React.ReactNode> = {
   recycle: <Recycle size={16} strokeWidth={1.5} />,
@@ -13,41 +15,65 @@ const iconMap: Record<string, React.ReactNode> = {
   users: <Users size={16} strokeWidth={1.5} />,
 };
 
-const categoriaColors: Record<string, string> = {
-  'Meio Ambiente': 'badge--green',
-  'Governança': 'badge--gray',
-  'Social / Trabalhista': 'badge--blue',
+const unidadeMedidaLabel: Record<UnidadeMedidaPDLS, string> = {
+  percentual: 'Percentual',
+  quantidade: 'Quantidade',
+  conformidade: 'Conformidade',
+  outro: 'Outro',
 };
 
-type FormState = { nome: string; descricao: string; categoria: string; tipo: string };
-const TIPO_PADRAO = 'Serviço de limpeza';
-
+/**
+ * Tela só de VISUALIZAÇÃO/seleção — filtra e mostra os Aspectos de Sustentabilidade
+ * já cadastrados, e o detalhe de cada um (Eixos PDLS + Indicadores de Desempenho já
+ * ligados a ele, e os contratos vinculados). Todo o CADASTRO (criar/editar/excluir
+ * Aspecto, Eixo PDLS ou Indicador de Desempenho) foi movido para a tela "Estrutura
+ * de Sustentabilidade" (`EstruturaSustentabilidade.tsx`) — a usuária achou confuso
+ * ter esse cadastro misturado aqui dentro do detalhe de um Aspecto, junto com o que
+ * é só consulta. Ver `types/index.ts` (comentário em `Indicador`) e README_HANDOFF.md.
+ *
+ * Volta a ser um grid de cards (a usuária testou a versão em lista/acordeão de uma
+ * rodada anterior e preferiu cards) — mas cada card só mostra o ícone, o nome e as
+ * badges (objeto + quantidade de Eixos PDLS), sem a descrição. Isso é o que resolve
+ * a reclamação original (cards muito "expandidos" na tela, todos abertos ao mesmo
+ * tempo): a descrição completa, os Eixos PDLS/Indicadores e os contratos vinculados
+ * só aparecem no modal de detalhe, ao clicar num card.
+ */
 export default function Indicadores() {
-  const { contratos, categorias } = useData();
-  const criarFormVazio = (): FormState => ({ nome: '', descricao: '', categoria: categorias[0] ?? '', tipo: TIPO_PADRAO });
-  const [showModal, setShowModal] = useState(false);
-  const [editando, setEditando] = useState<Indicador | null>(null);
+  const { contratos, indicadores: lista, eixosPDLS, indicadoresPDLSDe, podeVer } = useData();
+  const podeVerCadastroPDLS = podeVer('cadastroPdls');
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [detalhe, setDetalhe] = useState<Indicador | null>(null);
-  const [lista, setLista] = useState<Indicador[]>(indicadores);
-  const [form, setForm] = useState<FormState>(() => criarFormVazio());
-  const [filtroCategoria, setFiltroCategoria] = useState('todas');
+  const [filtroEixo, setFiltroEixo] = useState('todos');
   const [filtroTipo, setFiltroTipo] = useState('todos');
 
-  const set = (k: keyof FormState, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  // Ao salvar as Observações (passo 5) na "Estrutura de Sustentabilidade", a usuária é
+  // trazida direto pra cá com o modal do Aspecto correspondente já aberto — pra confirmar
+  // visualmente o que acabou de salvar, sem precisar procurar o card de novo. O
+  // `navigate(..., { replace: true, state: null })` consome esse estado uma única vez —
+  // sem isso, voltar pra esta tela pelo botão "Voltar" do navegador reabriria o modal.
+  useEffect(() => {
+    const abrirAspectoId = (location.state as { abrirAspectoId?: string } | null)?.abrirAspectoId;
+    if (!abrirAspectoId) return;
+    const ind = lista.find((i) => i.id === abrirAspectoId);
+    if (ind) setDetalhe(ind);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, lista, navigate]);
 
-  // Opções dos filtros vêm das próprias tags exibidas nos cards, então só aparecem
-  // eixos/objetos que realmente existem entre os macroindicadores cadastrados.
-  const categoriasDisponiveis = useMemo(
-    () => Array.from(new Set(lista.map((i) => i.categoria))).sort(),
-    [lista]
-  );
   const tiposDisponiveis = useMemo(
     () => Array.from(new Set(lista.map((i) => i.tipo))).sort(),
     [lista]
   );
 
+  /** Os "Eixos PDLS deste Aspecto" são só os que têm pelo menos um Indicador de
+   * Desempenho cadastrado pra ele — não existe mais um Eixo PDLS "principal" fixo
+   * no Aspecto (ver comentário no tipo `Indicador`). */
+  const eixosDoAspecto = (ind: Indicador) =>
+    eixosPDLS.filter((eixo) => indicadoresPDLSDe(ind.id, eixo.id).length > 0);
+
   const listaFiltrada = lista.filter((i) => {
-    if (filtroCategoria !== 'todas' && i.categoria !== filtroCategoria) return false;
+    if (filtroEixo !== 'todos' && eixosDoAspecto(i).every((e) => e.id !== filtroEixo)) return false;
     if (filtroTipo !== 'todos' && i.tipo !== filtroTipo) return false;
     return true;
   });
@@ -57,64 +83,28 @@ export default function Indicadores() {
   const contratosDoIndicador = (ind: Indicador) =>
     contratos.filter((c) => c.status === 'ativo' && c.objeto === ind.tipo);
 
-  const handleAdd = () => {
-    if (!form.nome) return;
-    const novo: Indicador = {
-      id: `i${Date.now()}`,
-      nome: form.nome,
-      descricao: form.descricao,
-      categoria: form.categoria,
-      tipo: form.tipo,
-      contratosVinculados: 0,
-      icone: 'leaf',
-    };
-    setLista([...lista, novo]);
-    setForm(criarFormVazio());
-    setShowModal(false);
-  };
-
-  const handleEdit = (ind: Indicador) => {
-    setEditando(ind);
-    setForm({ nome: ind.nome, descricao: ind.descricao, categoria: ind.categoria, tipo: ind.tipo });
-  };
-
-  const handleSaveEdit = () => {
-    if (!form.nome || !editando) return;
-    setLista((prev) =>
-      prev.map((i) =>
-        i.id === editando.id
-          ? { ...i, nome: form.nome, descricao: form.descricao, categoria: form.categoria, tipo: form.tipo }
-          : i
-      )
-    );
-    setEditando(null);
-    setForm(criarFormVazio());
-  };
-
-  const handleDelete = (id: string) => {
-    setLista((prev) => prev.filter((i) => i.id !== id));
-  };
-
   return (
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title-serif">Macroindicadores</h1>
-          <p className="page-subtitle">Macroindicadores de sustentabilidade vinculados aos contratos.</p>
+          <h1 className="page-title-serif">Aspectos de Sustentabilidade</h1>
+          <p className="page-subtitle">Aspectos de sustentabilidade vinculados aos contratos.</p>
         </div>
-        <button className="btn-primary" onClick={() => { setForm(criarFormVazio()); setShowModal(true); }}>
-          <Plus size={16} />
-          Novo Macroindicador
-        </button>
+        {podeVerCadastroPDLS && (
+          <Link to="/estrutura-sustentabilidade" className="btn-primary">
+            Estrutura de Sustentabilidade
+            <ArrowRight size={16} />
+          </Link>
+        )}
       </div>
 
-      {/* Filtros por tag (eixo temático e objeto contratual) */}
+      {/* Filtros — só consulta, o cadastro de Aspecto/Eixo/Indicador é em Estrutura de Sustentabilidade */}
       <div className="occurrence-filters">
         <Filter size={14} className="text-muted" />
-        <select className="filter-select-plain" value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
-          <option value="todas">Todos os eixos</option>
-          {categoriasDisponiveis.map((c) => (
-            <option key={c} value={c}>{c}</option>
+        <select className="filter-select-plain" value={filtroEixo} onChange={(e) => setFiltroEixo(e.target.value)}>
+          <option value="todos">Todos os Eixos PDLS</option>
+          {eixosPDLS.map((e) => (
+            <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>
           ))}
         </select>
         <select className="filter-select-plain" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
@@ -124,159 +114,108 @@ export default function Indicadores() {
           ))}
         </select>
         <span className="occurrence-count">
-          {listaFiltrada.length} macroindicador{listaFiltrada.length !== 1 ? 'es' : ''}
+          {listaFiltrada.length} aspecto{listaFiltrada.length !== 1 ? 's' : ''} de sustentabilidade
         </span>
       </div>
 
       <div className="indicators-grid">
         {listaFiltrada.map((ind) => {
+          const eixos = eixosDoAspecto(ind);
           return (
             <div key={ind.id} className="indicator-card" onClick={() => setDetalhe(ind)}>
               <div className="indicator-card-top">
                 <div className="indicator-card-badges">
-                  <span className={`badge ${categoriaColors[ind.categoria] || 'badge--gray'}`}>
-                    {ind.categoria}
-                  </span>
                   <span className="badge badge--outline">{ind.tipo}</span>
-                </div>
-                <div className="indicator-card-actions">
-                  <button
-                    className="indicator-action-btn"
-                    title="Editar"
-                    onClick={(e) => { e.stopPropagation(); handleEdit(ind); }}
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    className="indicator-action-btn indicator-action-btn--delete"
-                    title="Excluir"
-                    onClick={(e) => { e.stopPropagation(); handleDelete(ind.id); }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <span className="badge badge--outline">
+                    {eixos.length === 0 ? 'Sem Eixo PDLS cadastrado' : `${eixos.length} Eixo${eixos.length !== 1 ? 's' : ''} PDLS`}
+                  </span>
                 </div>
               </div>
-              <div className="indicator-card-heading">
+              <div className="indicator-card-heading" style={{ marginBottom: 0 }}>
                 <div className="indicator-card-icon">
                   {iconMap[ind.icone] || <Leaf size={16} />}
                 </div>
                 <h3 className="indicator-card-name">{ind.nome}</h3>
               </div>
-              <p className="indicator-card-desc">{ind.descricao}</p>
             </div>
           );
         })}
         {listaFiltrada.length === 0 && (
-          <p className="empty-state-sm">Nenhum macroindicador encontrado para o filtro atual.</p>
+          <p className="empty-state-sm">Nenhum aspecto de sustentabilidade encontrado para o filtro atual.</p>
         )}
       </div>
 
-      {/* Modal Novo Macroindicador */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">Novo Macroindicador</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}><X size={18} /></button>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Nome do Macroindicador *</label>
-              <input className="form-input" placeholder="Ex: Gestão de Resíduos" value={form.nome} onChange={(e) => set('nome', e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Eixo Temático *</label>
-              <select className="form-input" value={form.categoria} onChange={(e) => set('categoria', e.target.value)}>
-                {categorias.length === 0 && <option value="">Nenhum eixo cadastrado</option>}
-                {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <p className="form-hint form-hint--muted">
-                Eixos são cadastrados na tela de Ocorrências, em "Eixos temáticos".
-              </p>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Objeto Contratual *</label>
-              <select className="form-input" value={form.tipo} onChange={(e) => set('tipo', e.target.value)}>
-                <option>Serviço de limpeza</option>
-                <option>Locação de veículos</option>
-                <option>Vigilância orgânica</option>
-                <option>Serviços administrativos</option>
-                <option>Construção</option>
-                <option>Geral</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Descrição</label>
-              <textarea className="form-input form-textarea" placeholder="Descreva o macroindicador..." value={form.descricao} onChange={(e) => set('descricao', e.target.value)} />
-            </div>
-            <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setShowModal(false)}>Cancelar</button>
-              <button className="btn-primary" onClick={handleAdd}>Salvar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Editar Macroindicador */}
-      {editando && (
-        <div className="modal-overlay" onClick={() => setEditando(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">Editar Macroindicador</h2>
-              <button className="modal-close" onClick={() => setEditando(null)}><X size={18} /></button>
-            </div>
-            <p className="modal-subtitle">Macroindicador de sustentabilidade vinculado ao contrato.</p>
-            <div className="form-group">
-              <label className="form-label">Nome do Macroindicador *</label>
-              <input className="form-input" placeholder="Ex: Gestão de Resíduos" value={form.nome} onChange={(e) => set('nome', e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Eixo Temático *</label>
-              <select className="form-input" value={form.categoria} onChange={(e) => set('categoria', e.target.value)}>
-                {categorias.length === 0 && <option value="">Nenhum eixo cadastrado</option>}
-                {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <p className="form-hint form-hint--muted">
-                Eixos são cadastrados na tela de Ocorrências, em "Eixos temáticos".
-              </p>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Objeto Contratual *</label>
-              <select className="form-input" value={form.tipo} onChange={(e) => set('tipo', e.target.value)}>
-                <option>Serviço de limpeza</option>
-                <option>Locação de veículos</option>
-                <option>Vigilância orgânica</option>
-                <option>Serviços administrativos</option>
-                <option>Construção</option>
-                <option>Geral</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Descrição</label>
-              <textarea className="form-input form-textarea" placeholder="Descreva o macroindicador..." value={form.descricao} onChange={(e) => set('descricao', e.target.value)} />
-            </div>
-            <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setEditando(null)}>Cancelar</button>
-              <button className="btn-primary" onClick={handleSaveEdit}>Salvar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Detalhe: contratos vinculados ao macroindicador */}
+      {/* Modal Detalhe — só leitura: descrição, Eixos PDLS + Indicadores de Desempenho já cadastrados, e contratos vinculados */}
       {detalhe && (
         <div className="modal-overlay" onClick={() => setDetalhe(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal--lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{detalhe.nome}</h2>
               <button className="modal-close" onClick={() => setDetalhe(null)}><X size={18} /></button>
             </div>
             <p className="modal-subtitle">{detalhe.descricao}</p>
-            <div className="indicator-card-badges" style={{ marginBottom: 14 }}>
-              <span className={`badge ${categoriaColors[detalhe.categoria] || 'badge--gray'}`}>
-                {detalhe.categoria}
-              </span>
+            <div className="indicator-card-badges" style={{ marginBottom: 0 }}>
               <span className="badge badge--outline">{detalhe.tipo}</span>
             </div>
+
+            <div className="detail-block">
+              <span className="detail-label">Eixos PDLS e Indicadores de Desempenho</span>
+              {eixosDoAspecto(detalhe).length === 0 ? (
+                <p className="empty-state-sm">
+                  Nenhum Eixo PDLS cadastrado para este aspecto ainda.
+                  {podeVerCadastroPDLS && (
+                    <> Cadastre em <Link to="/estrutura-sustentabilidade">Estrutura de Sustentabilidade</Link>.</>
+                  )}
+                </p>
+              ) : (
+                eixosDoAspecto(detalhe).map((eixo) => (
+                  <div key={eixo.id} style={{ marginTop: 14 }}>
+                    <span className="eixo-nome-atual">Eixo {eixo.numero} – {eixo.nome}</span>
+                    <div className="pdls-list" style={{ marginTop: 8 }}>
+                      {indicadoresPDLSDe(detalhe.id, eixo.id).map((p) => (
+                        <div key={p.id} className="pdls-card">
+                          <div className="pdls-card-top">
+                            <span className="pdls-card-nome">{p.nome}</span>
+                          </div>
+                          <div className="pdls-card-meta-row">
+                            <span className="badge badge--outline">{unidadeMedidaLabel[p.unidadeMedida]}</span>
+                            <span className="pdls-card-meta">
+                              Meta: {p.meta ? p.meta : <em>a definir</em>}
+                            </span>
+                          </div>
+                          {p.meiosVerificacao.length > 0 && (
+                            <div className="pdls-meios">
+                              <span className="pdls-meios-titulo"><ClipboardCheck size={13} /> Meios de verificação</span>
+                              <ul className="pdls-meios-list">
+                                {p.meiosVerificacao.map((m) => <li key={m.id}>{m.descricao}</li>)}
+                              </ul>
+                            </div>
+                          )}
+                          {p.referenciaNormativa && <p className="pdls-card-muted pdls-card-referencia">{p.referenciaNormativa}</p>}
+                          {(p.observacoes || (p.anexos && p.anexos.length > 0)) && (
+                            <div className="pdls-meios">
+                              <span className="pdls-meios-titulo"><Paperclip size={13} /> Observações</span>
+                              {p.observacoes && <p className="pdls-card-muted" style={{ marginTop: 4 }}>{p.observacoes}</p>}
+                              {p.anexos && p.anexos.length > 0 && (
+                                <div className="anexo-list" style={{ marginTop: 6 }}>
+                                  {p.anexos.map((anexo) => (
+                                    <a key={anexo.id} className="anexo-item anexo-item-link" href={anexo.url} target="_blank" rel="noreferrer" download={anexo.nome}>
+                                      <Paperclip size={13} />
+                                      <span className="anexo-item-nome">{anexo.nome}</span>
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
             <div className="detail-block">
               <span className="detail-label">Contratos vinculados</span>
               {contratosDoIndicador(detalhe).length === 0 ? (

@@ -11,37 +11,44 @@ function getFaixa(score: number): { label: string; color: string; pct: string } 
 
 export default function CalculoScore() {
   const { contratos: todosContratos } = useData();
-  // Contratos inativos não entram no cálculo/apresentação do score.
-  const contratosAtivos = useMemo(
-    () => todosContratos.filter((c) => c.status === 'ativo'),
-    [todosContratos],
-  );
 
+  // Contratos inativos continuam aparecendo aqui, marcados como "(Inativo — histórico)"
+  // — servem como informação gerencial para futuras contratações, mas não entram no
+  // score atual do fornecedor (isso é calculado só com os contratos ativos, em
+  // scoreFornecedor no DataContext).
+  // O seletor de contrato começa vazio — mostra um rótulo descritivo ("Selecione um
+  // contrato"), igual ao seletor de unidade tem "Todas as unidades". Antes ele já
+  // vinha com o primeiro contrato da lista pré-selecionado, puxando um fornecedor
+  // específico sem o usuário ter escolhido nada — a usuária achou isso confuso.
   const [unidadeSel, setUnidadeSel] = useState('Todos');
-  const [contratoSel, setContratoSel] = useState(contratosAtivos[0]?.id ?? '');
+  const [contratoSel, setContratoSel] = useState('');
   const [periodoSel, setPeriodoSel] = useState('Mar/2024');
 
   const opcoesUnidade = useMemo(
-    () => ['Todos', ...new Set(contratosAtivos.map((c) => c.unidade).filter(Boolean) as string[])],
-    [contratosAtivos],
+    () => ['Todos', ...new Set(todosContratos.map((c) => c.unidade).filter(Boolean) as string[])],
+    [todosContratos],
   );
 
   // O contrato listado fica atrelado à unidade escolhida — inclui todos os contratos
-  // daquela unidade, mesmo quando o mesmo fornecedor aparece em mais de um contrato.
+  // daquela unidade, mesmo quando o mesmo fornecedor aparece em mais de um contrato,
+  // e mesmo quando o contrato está inativo (fica marcado, mas continua visível).
   const contratosParaSelecao = useMemo(
-    () => contratosAtivos.filter((c) => unidadeSel === 'Todos' || c.unidade === unidadeSel),
-    [contratosAtivos, unidadeSel],
+    () => todosContratos.filter((c) => unidadeSel === 'Todos' || c.unidade === unidadeSel),
+    [todosContratos, unidadeSel],
   );
 
+  // Só limpa a seleção se o contrato escolhido saiu da lista filtrada (ex: trocou de
+  // unidade) — nunca escolhe um novo automaticamente no lugar; sem seleção, o
+  // seletor volta a mostrar "Selecione um contrato" e o usuário escolhe de novo.
   useEffect(() => {
-    if (!contratosParaSelecao.some((c) => c.id === contratoSel)) {
-      setContratoSel(contratosParaSelecao[0]?.id ?? '');
+    if (contratoSel && !contratosParaSelecao.some((c) => c.id === contratoSel)) {
+      setContratoSel('');
     }
   }, [contratosParaSelecao, contratoSel]);
 
-  const contrato = contratosAtivos.find((c) => c.id === contratoSel) ?? contratosParaSelecao[0] ?? contratosAtivos[0];
+  const contrato = todosContratos.find((c) => c.id === contratoSel);
 
-  if (!contrato) {
+  if (todosContratos.length === 0) {
     return (
       <div className="page">
         <div className="page-header">
@@ -51,24 +58,27 @@ export default function CalculoScore() {
           </div>
         </div>
         <div className="empty-state">
-          Nenhum contrato ativo encontrado. Contratos inativos não são contabilizados no score — reative um
-          contrato em Cadastro para calcular a pontuação.
+          Nenhum contrato cadastrado ainda — cadastre um contrato em Fornecedores para calcular a pontuação.
         </div>
       </div>
     );
   }
 
-  const medicao = medicoes.find(
-    (m) => m.contratoId === contrato.id && m.periodo === periodoSel
-  ) || medicoes.find((m) => m.contratoId === contrato.id);
+  // A partir daqui, tudo é opcional (`?.`/`??`) porque `contrato` pode ser `undefined`
+  // — o usuário ainda não escolheu nenhum no seletor. O bloco de score só é
+  // renderizado quando `contrato` existe (ver `{contrato ? ... : ...}` mais abaixo).
+  const medicao = contrato
+    ? medicoes.find((m) => m.contratoId === contrato.id && m.periodo === periodoSel)
+      ?? medicoes.find((m) => m.contratoId === contrato.id)
+    : undefined;
 
-  const score = medicao?.score ?? contrato.score;
+  const score = medicao?.score ?? contrato?.score ?? 0;
   const ocorrenciasQtd = medicao?.ocorrencias ?? 0;
   const deducaoTotal = ocorrenciasQtd * 25;
-  const pagamentoPct = medicao?.pagamento ?? contrato.pagamento;
+  const pagamentoPct = medicao?.pagamento ?? contrato?.pagamento ?? 0;
   const faixa = getFaixa(score);
 
-  const historico = medicoes.filter((m) => m.contratoId === contrato.id);
+  const historico = contrato ? medicoes.filter((m) => m.contratoId === contrato.id) : [];
 
   const donutData = [
     { value: score, color: faixa.color },
@@ -80,7 +90,10 @@ export default function CalculoScore() {
       <div className="page-header">
         <div>
           <h1 className="page-title-serif">Cálculo do Score</h1>
-          <p className="page-subtitle">Processamento automático da pontuação mensal. Contratos inativos não entram nesta lista.</p>
+          <p className="page-subtitle">
+            Processamento automático da pontuação mensal. Contratos inativos aparecem marcados como histórico —
+            úteis para avaliar o desempenho passado do fornecedor, mas não contam no score atual dele.
+          </p>
         </div>
       </div>
 
@@ -97,12 +110,13 @@ export default function CalculoScore() {
         </select>
         <select
           className="score-selector"
-          value={contrato.id}
+          value={contratoSel}
           onChange={(e) => setContratoSel(e.target.value)}
         >
+          <option value="">Selecione um contrato</option>
           {contratosParaSelecao.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.fornecedorNome} — {c.numero}{c.unidade ? ` · ${c.unidade}` : ''}
+              {c.fornecedorNome} — {c.numero}{c.unidade ? ` · ${c.unidade}` : ''}{c.status === 'inativo' ? ' (Inativo — histórico)' : ''}
             </option>
           ))}
         </select>
@@ -117,6 +131,9 @@ export default function CalculoScore() {
         </select>
       </div>
 
+      {!contrato ? (
+        <div className="empty-state">Selecione um contrato acima para ver o score calculado.</div>
+      ) : (
       <div className="score-content">
         {/* Gauge */}
         <div className="score-gauge-card">
@@ -155,6 +172,11 @@ export default function CalculoScore() {
         <div className="score-detail-card">
           <h3 className="score-card-title">Detalhamento — {contrato.fornecedorNome}</h3>
           <p className="score-contract-num">{contrato.numero}</p>
+          {contrato.status === 'inativo' && (
+            <p className="form-hint form-hint--muted" style={{ marginTop: -4, marginBottom: 8 }}>
+              Contrato inativo — dados exibidos apenas como histórico de desempenho, sem impacto no score atual do fornecedor.
+            </p>
+          )}
 
           <div className="score-breakdown">
             <div className="breakdown-row">
@@ -194,6 +216,7 @@ export default function CalculoScore() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

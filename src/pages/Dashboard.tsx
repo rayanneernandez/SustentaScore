@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   LineChart,
   Line,
@@ -28,14 +31,17 @@ import {
   Filter,
   Maximize2,
   Minimize2,
+  Download,
+  Image as ImageIcon,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   scoreHistorico,
-  ocorrenciasPorTipo,
   distribuicaoScore,
-  ocorrencias,
 } from '../data/mockData';
 import { useData } from '../context/DataContext';
+import NotificationBell from '../components/NotificationBell';
+import type { LayoutContext } from '../components/Layout';
 
 const faixasPagamento = [
   { range: '500 a 450', percentual: '100%', status: 'Verde', color: 'verde' },
@@ -63,7 +69,40 @@ function limitarScore(score: number) {
   return Math.max(0, Math.min(500, Math.round(score)));
 }
 
+const labelFaixaCompleto: Record<'verde' | 'cinza' | 'preto', string> = {
+  verde: 'Verde',
+  cinza: 'Cinza',
+  preto: 'Preto',
+};
+
+/** Usado no nome dos arquivos exportados (imagem/CSV/PDF) — data e hora local por
+ * extenso, sem caracteres que dão problema em nome de arquivo. */
+function timestampArquivo() {
+  const agora = new Date();
+  const dois = (n: number) => String(n).padStart(2, '0');
+  return `${agora.getFullYear()}${dois(agora.getMonth() + 1)}${dois(agora.getDate())}_${dois(agora.getHours())}${dois(agora.getMinutes())}`;
+}
+
+/** Uma "seção" do relatório de monitoramento — vira uma tabela no PDF e um bloco
+ * (faixa de título + cabeçalho + linhas, formatado) na planilha Excel. Mantém os
+ * dois formatos de exportação sempre com exatamente as mesmas informações,
+ * montadas num só lugar. */
+interface SecaoRelatorio {
+  titulo: string;
+  colunas: string[];
+  linhas: string[][];
+}
+
+// Mesma paleta do resto do sistema (ver `:root` em `index.css`), em hex sem o "#" —
+// é o formato que o ExcelJS espera pras cores de preenchimento (ARGB).
+const EXCEL_COR_TITULO = 'FF2C4A2E'; // var(--primary)
+const EXCEL_COR_SECAO = 'FF5C8B5F'; // var(--accent)
+const EXCEL_COR_CABECALHO = 'FFEAF0EA'; // var(--primary-pale)
+const EXCEL_COR_LINHA_PAR = 'FFF5F1EA'; // var(--bg)
+const EXCEL_COR_BORDA = 'FFE2DDD5'; // var(--border)
+
 export default function Dashboard() {
+  const { notifAberto, setNotifAberto } = useOutletContext<LayoutContext>();
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [orgao, setOrgao] = useState('Todos');
   const [contrato, setContrato] = useState('Todos');
@@ -72,8 +111,10 @@ export default function Dashboard() {
   const [expandido, setExpandido] = useState(false);
   const [modoEvolucao, setModoEvolucao] = useState<'geral' | 'unidade'>('geral');
   const [mostrarTodosMenoresScore, setMostrarTodosMenoresScore] = useState(false);
+  const [menuExportAberto, setMenuExportAberto] = useState(false);
+  const [exportando, setExportando] = useState<'imagem' | 'excel' | 'pdf' | null>(null);
 
-  const { contratos: todosContratos } = useData();
+  const { contratos: todosContratos, ocorrencias, eixosPDLS } = useData();
 
   // Contratos inativos não são contabilizados no score, nos indicadores nem nos alertas do painel.
   const contratos = useMemo(
@@ -300,18 +341,24 @@ export default function Dashboard() {
     return melhor;
   }, [contratos]);
 
+  // Ocorrências agrupadas por Eixo PDLS (1 a 6) — cada ocorrência está atrelada a um
+  // dos 6 eixos, então esse gráfico mostra em quais eixos os fornecedores mais têm
+  // descumprido metas.
   const ocorrenciasAgrupadas = useMemo(() => {
     const totais = ocorrenciasFiltradas.reduce<Record<string, number>>((acc, item) => {
-      acc[item.categoria] = (acc[item.categoria] ?? 0) + 1;
+      acc[item.eixoPDLSId] = (acc[item.eixoPDLSId] ?? 0) + 1;
       return acc;
     }, {});
 
     const agrupadas = Object.entries(totais)
-      .map(([tipo, total]) => ({ tipo, total }))
+      .map(([eixoId, total]) => {
+        const eixo = eixosPDLS.find((e) => e.id === eixoId);
+        return { tipo: eixo ? `Eixo ${eixo.numero}` : 'Outro', total };
+      })
       .sort((a, b) => b.total - a.total);
 
     return agrupadas.length ? agrupadas : [{ tipo: 'Sem registros', total: 0 }];
-  }, [ocorrenciasFiltradas]);
+  }, [ocorrenciasFiltradas, eixosPDLS]);
 
   const menoresFornecedoresTodos = useMemo(
     () => [...contratosFiltrados].sort((a, b) => a.score - b.score),
@@ -328,7 +375,13 @@ export default function Dashboard() {
   );
 
   const labelPeriodo = periodo === 'Todos' ? 'todos os períodos' : periodo;
-  const dashboardClasses = `page${expandido ? ' page--fullscreen' : ''}`;
+  // O wrapper externo (alvo da API de fullscreen) NÃO tem a classe `page` — ela
+  // ficou só no `<div className="page">` interno, que envolve filtros/KPIs/gráficos.
+  // Isso deixa o `dashboard-header` (o cabeçalho branco) como um irmão fora desse
+  // container com largura máxima, ocupando 100% da largura do `.main-content` (sem
+  // as margens esquerda/direita que apareciam em monitores muito largos, quando o
+  // `.page` de dentro batia no `max-width` e ficava centralizado com `margin:auto`).
+  const dashboardClasses = expandido ? 'page--fullscreen' : undefined;
 
   const limparFiltros = () => {
     setOrgao('Todos');
@@ -350,6 +403,273 @@ export default function Dashboard() {
     }
   };
 
+  /**
+   * Todas as informações do painel, organizadas em seções — respeita os filtros
+   * (Órgão/Contrato/Fornecedor/Período) e o modo de evolução (geral/por unidade)
+   * que estão selecionados na tela no momento da exportação. Usado tanto pelo CSV
+   * quanto pelo PDF, pra os dois sempre saírem com o mesmo conteúdo.
+   */
+  const montarSecoesRelatorio = (): SecaoRelatorio[] => {
+    const secoes: SecaoRelatorio[] = [];
+
+    secoes.push({
+      titulo: 'Filtros aplicados',
+      colunas: ['Filtro', 'Valor'],
+      linhas: [
+        ['Órgão / Unidade', orgao],
+        ['Contrato', contrato],
+        ['Fornecedor', fornecedor],
+        ['Período', periodo],
+      ],
+    });
+
+    secoes.push({
+      titulo: 'Indicadores gerais',
+      colunas: ['Indicador', 'Valor'],
+      linhas: [
+        ['Contratos monitorados (ativos)', String(contratosFiltrados.length)],
+        ['Fornecedores avaliados', String(fornecedoresAvaliados)],
+        ['Score médio', `${scoreMedio} de 500 pontos`],
+        ['Contratos avaliados no mês', `${contratosFiltrados.length} (em ${labelPeriodo})`],
+        ['Pagamento médio', `${pagamentoMedio}%`],
+        [
+          'Unidade mais sustentável',
+          unidadeMaisSustentavel
+            ? `${unidadeMaisSustentavel.nome} (${unidadeMaisSustentavel.media} pontos em média)`
+            : 'Sem dados suficientes',
+        ],
+      ],
+    });
+
+    secoes.push({
+      titulo: 'Distribuição dos contratos por faixa de score',
+      colunas: ['Faixa', 'Contratos'],
+      linhas: distribuicaoFiltrada.map((item) => [item.name, String(item.value)]),
+    });
+
+    if (modoEvolucao === 'geral') {
+      secoes.push({
+        titulo: 'Evolução do score médio (geral)',
+        colunas: ['Mês', 'Score'],
+        linhas: historicoFiltrado.map((item) => [item.mes, String(item.score)]),
+      });
+    } else {
+      secoes.push({
+        titulo: 'Evolução do score médio (por unidade)',
+        colunas: ['Mês', ...unidadesDoGrafico],
+        linhas: historicoPorUnidade.map((linha) => [
+          String(linha.mes),
+          ...unidadesDoGrafico.map((nome) => String(linha[nome] ?? '')),
+        ]),
+      });
+    }
+
+    secoes.push({
+      titulo: 'Distribuição das ocorrências por Eixo PDLS',
+      colunas: ['Eixo', 'Ocorrências'],
+      linhas: [
+        ...ocorrenciasAgrupadas.map((item) => [item.tipo, String(item.total)]),
+        ['Total', String(totalOcorrencias)],
+      ],
+    });
+
+    secoes.push({
+      titulo: 'Faixas de pagamento',
+      colunas: ['Score', 'Percentual de pagamento', 'Status'],
+      linhas: faixasPagamento.map((f) => [f.range, f.percentual, f.status]),
+    });
+
+    secoes.push({
+      titulo: `Fornecedores com menor score (${menoresFornecedoresTodos.length})`,
+      colunas: ['Fornecedor', 'Unidade', 'Contrato', 'Score', 'Status'],
+      linhas: menoresFornecedoresTodos.map((c) => [
+        c.fornecedorNome,
+        c.unidade || '—',
+        c.numero,
+        String(c.score),
+        labelFaixaCompleto[c.faixa],
+      ]),
+    });
+
+    return secoes;
+  };
+
+  /**
+   * Planilha Excel (.xlsx) formatada — faixas de título coloridas por seção, cabeçalho
+   * destacado, linhas zebradas e números alinhados à direita (ver `EXCEL_COR_*` acima,
+   * mesma paleta do resto do sistema). Um CSV puro não tem como carregar nenhuma dessas
+   * formatações — foi o que a usuária testou primeiro e achou "desorganizado" no Excel
+   * (sem negrito, sem cor, tudo colado) — por isso a exportação de dados virou .xlsx
+   * de verdade em vez de .csv.
+   */
+  const exportarExcel = async () => {
+    if (exportando) return;
+    setExportando('excel');
+    try {
+      // Import dinâmico — o ExcelJS só é baixado quando alguém realmente exporta a
+      // planilha, em vez de engordar o pacote inicial carregado por todo mundo.
+      const ExcelJS = (await import('exceljs')).default;
+      const secoes = montarSecoesRelatorio();
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'SustentaScore';
+      workbook.created = new Date();
+      const ws = workbook.addWorksheet('Monitoramento', { views: [{ showGridLines: false }] });
+
+      const maxColunas = Math.max(...secoes.map((s) => s.colunas.length), 1);
+
+      ws.mergeCells(1, 1, 1, maxColunas);
+      const celulaTitulo = ws.getCell(1, 1);
+      celulaTitulo.value = 'Monitoramento de Desempenho de Fornecedores – Sustentabilidade (IMR)';
+      celulaTitulo.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+      celulaTitulo.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COR_TITULO } };
+      celulaTitulo.alignment = { vertical: 'middle', horizontal: 'left' };
+      ws.getRow(1).height = 26;
+
+      ws.mergeCells(2, 1, 2, maxColunas);
+      const celulaSubtitulo = ws.getCell(2, 1);
+      celulaSubtitulo.value = `Painel Gerencial — gerado em ${new Date().toLocaleString('pt-BR')}`;
+      celulaSubtitulo.font = { italic: true, size: 9.5, color: { argb: 'FF6B7280' } };
+      celulaSubtitulo.alignment = { vertical: 'middle', horizontal: 'left' };
+
+      let linha = 4;
+
+      secoes.forEach((secao) => {
+        const numColunas = Math.max(secao.colunas.length, 1);
+
+        // Faixa de título da seção — mesclada, fundo verde-claro, texto branco.
+        ws.mergeCells(linha, 1, linha, numColunas);
+        const celulaSecao = ws.getCell(linha, 1);
+        celulaSecao.value = secao.titulo;
+        celulaSecao.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        celulaSecao.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COR_SECAO } };
+        celulaSecao.alignment = { vertical: 'middle', horizontal: 'left' };
+        ws.getRow(linha).height = 20;
+        linha += 1;
+
+        // Cabeçalho das colunas — negrito, fundo verde bem clarinho.
+        const linhaCabecalho = ws.getRow(linha);
+        secao.colunas.forEach((coluna, i) => {
+          const cel = linhaCabecalho.getCell(i + 1);
+          cel.value = coluna;
+          cel.font = { bold: true, size: 10, color: { argb: 'FF1A1A1A' } };
+          cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COR_CABECALHO } };
+          cel.border = { bottom: { style: 'thin', color: { argb: EXCEL_COR_BORDA } } };
+          cel.alignment = { vertical: 'middle' };
+        });
+        linha += 1;
+
+        // Linhas de dados — zebrado a cada 2ª linha; valores puramente numéricos viram
+        // número de verdade (alinhado à direita), em vez de texto alinhado à esquerda.
+        secao.linhas.forEach((valores, indiceLinha) => {
+          const linhaExcel = ws.getRow(linha);
+          valores.forEach((valor, i) => {
+            const cel = linhaExcel.getCell(i + 1);
+            const numero = /^-?\d+(\.\d+)?$/.test(valor) ? Number(valor) : null;
+            cel.value = numero !== null ? numero : valor;
+            cel.font = { size: 10, color: { argb: 'FF1A1A1A' } };
+            cel.alignment = { horizontal: numero !== null ? 'right' : 'left', vertical: 'middle' };
+            cel.border = { bottom: { style: 'thin', color: { argb: EXCEL_COR_BORDA } } };
+            if (indiceLinha % 2 === 1) {
+              cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COR_LINHA_PAR } };
+            }
+          });
+          linha += 1;
+        });
+
+        linha += 1; // linha em branco entre seções
+      });
+
+      ws.getColumn(1).width = 34;
+      for (let i = 2; i <= maxColunas; i += 1) {
+        ws.getColumn(i).width = 22;
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `monitoramento_sustentascore_${timestampArquivo()}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Não foi possível gerar a planilha Excel.', error);
+    } finally {
+      setExportando(null);
+      setMenuExportAberto(false);
+    }
+  };
+
+  const exportarPDF = () => {
+    if (exportando) return;
+    setExportando('pdf');
+    try {
+      const secoes = montarSecoesRelatorio();
+      const doc = new jsPDF();
+      doc.setFontSize(14);
+      doc.text('Monitoramento de Desempenho de Fornecedores – Sustentabilidade (IMR)', 14, 16);
+      doc.setFontSize(10);
+      doc.setTextColor(90);
+      doc.text(`Painel Gerencial — gerado em ${new Date().toLocaleString('pt-BR')}`, 14, 22);
+
+      let y = 30;
+      secoes.forEach((secao) => {
+        if (y > 250) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.setFontSize(11);
+        doc.setTextColor(30);
+        doc.text(secao.titulo, 14, y);
+        autoTable(doc, {
+          startY: y + 4,
+          head: [secao.colunas],
+          body: secao.linhas,
+          styles: { fontSize: 8.5 },
+          headStyles: { fillColor: [61, 92, 62] },
+          margin: { left: 14, right: 14 },
+        });
+        // `lastAutoTable` é anexado ao `doc` em tempo de execução pelo próprio
+        // jspdf-autotable — não tem tipo declarado, por isso o cast.
+        y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 12;
+      });
+
+      doc.save(`monitoramento_sustentascore_${timestampArquivo()}.pdf`);
+    } finally {
+      setExportando(null);
+      setMenuExportAberto(false);
+    }
+  };
+
+  const exportarImagem = async () => {
+    if (exportando || !dashboardRef.current) return;
+    setExportando('imagem');
+    try {
+      // Import dinâmico — o html2canvas só é baixado quando alguém realmente pede a
+      // imagem, em vez de engordar o pacote inicial carregado por todo mundo.
+      const { default: html2canvas } = await import('html2canvas');
+      const canvas = await html2canvas(dashboardRef.current, {
+        backgroundColor: '#F5F1EA',
+        scale: 2,
+        useCORS: true,
+        // Botões/menus de ação não são "informação do painel" — só o conteúdo.
+        ignoreElements: (el) => el.classList.contains('dashboard-export-hide'),
+      });
+      const link = document.createElement('a');
+      link.download = `monitoramento_sustentascore_${timestampArquivo()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (error) {
+      console.error('Não foi possível gerar a imagem do painel.', error);
+    } finally {
+      setExportando(null);
+      setMenuExportAberto(false);
+    }
+  };
+
   return (
     <div ref={dashboardRef} className={dashboardClasses}>
       {/* Header */}
@@ -359,17 +679,61 @@ export default function Dashboard() {
           <p className="page-subtitle">Painel Gerencial</p>
         </div>
         <div className="dashboard-header-actions">
-          <button className="btn-secondary dashboard-expand-btn" onClick={alternarFullscreen}>
+          {/* `dashboard-export-hide` marca o que é controle/ação da tela, não informação do
+              painel — fica de fora da imagem exportada em `exportarImagem` (html2canvas). */}
+          <div className="export-menu-wrapper dashboard-export-hide">
+            <button
+              type="button"
+              className="btn-secondary dashboard-expand-btn"
+              onClick={() => setMenuExportAberto((v) => !v)}
+              disabled={exportando !== null}
+            >
+              <Download size={16} />
+              {exportando ? 'Exportando…' : 'Exportar relatório'}
+              <ChevronDown size={13} />
+            </button>
+            {menuExportAberto && (
+              <>
+                <div className="export-menu-overlay" onClick={() => setMenuExportAberto(false)} />
+                <div className="export-menu">
+                  <button type="button" className="export-menu-item" onClick={exportarImagem}>
+                    <ImageIcon size={15} />
+                    Exportar como imagem (PNG)
+                  </button>
+                  <button type="button" className="export-menu-item" onClick={exportarExcel}>
+                    <FileSpreadsheet size={15} />
+                    Exportar dados em Excel (XLSX)
+                  </button>
+                  <button type="button" className="export-menu-item" onClick={exportarPDF}>
+                    <FileText size={15} />
+                    Exportar relatório em PDF
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <button className="btn-secondary dashboard-expand-btn dashboard-export-hide" onClick={alternarFullscreen}>
             {expandido ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             {expandido ? 'Sair da tela inteira' : 'Tela inteira'}
           </button>
-          <div className="dashboard-last-update">
-            <Calendar size={14} />
-            <span>Última atualização:<br />31/05/2024 10:30</span>
+          <div className="dashboard-last-update-row">
+            <div className="dashboard-last-update">
+              <Calendar size={14} />
+              <span>Última atualização:<br />31/05/2024 10:30</span>
+            </div>
+            <div className="dashboard-export-hide">
+              <NotificationBell aberto={notifAberto} onAbrirChange={setNotifAberto} />
+            </div>
           </div>
         </div>
       </div>
 
+      {/* O corpo (filtros/KPIs/gráficos/tabelas) continua com a classe `page` (padding +
+          largura máxima centralizada) — só o `dashboard-header` acima ficou fora disso.
+          Em tela inteira, ganha `dashboard-body--fullscreen` pra ignorar o `max-width` e
+          aproveitar a largura toda do monitor (quem controla o tamanho/scroll do modo
+          tela inteira em si é o wrapper externo, com `page--fullscreen`). */}
+      <div className={`page${expandido ? ' dashboard-body--fullscreen' : ''}`}>
       {/* Filtros */}
       <div className="filters-bar">
         <div className="filter-group">
@@ -567,7 +931,7 @@ export default function Dashboard() {
 
         {/* Horizontal Bar Chart */}
         <div className="chart-card">
-          <h3 className="chart-title">DISTRIBUIÇÃO DAS OCORRÊNCIAS POR TIPO</h3>
+          <h3 className="chart-title">DISTRIBUIÇÃO DAS OCORRÊNCIAS POR EIXO PDLS</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart
               data={ocorrenciasAgrupadas}
@@ -674,6 +1038,7 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

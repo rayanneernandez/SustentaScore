@@ -1,18 +1,12 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  Plus, ChevronDown, ChevronUp, Filter, X, Tag, Trash2,
+  Plus, ChevronDown, ChevronUp, Filter, X, Trash2,
   Upload, Paperclip, Link2, GraduationCap, ExternalLink,
 } from 'lucide-react';
-import { indicadores } from '../data/mockData';
 import { useData } from '../context/DataContext';
 import { TAMANHO_MAX_ANEXO, MAX_ANEXOS_POR_ENVIO, arquivosParaAnexos } from '../utils/anexos';
 import type { Ocorrencia, TipoRegistroOcorrencia } from '../types';
-
-const categoriaColors: Record<string, string> = {
-  'Meio Ambiente': 'badge--green',
-  'Governança': 'badge--gray',
-  'Social / Trabalhista': 'badge--blue',
-};
 
 function formatDate(dateStr: string) {
   const [year, month, day] = dateStr.split('-');
@@ -20,12 +14,12 @@ function formatDate(dateStr: string) {
   return `${parseInt(day)} de ${months[parseInt(month) - 1]}. de ${year}`;
 }
 
-function criarFormVazio(categoriaPadrao: string) {
+function criarFormVazio(eixoPadraoId: string) {
   return {
     fornecedorId: '',
     contratoId: '',
     indicadorId: '',
-    categoria: categoriaPadrao,
+    eixoPDLSId: eixoPadraoId,
     descricao: '',
     data: '',
     deducao: 25,
@@ -36,22 +30,32 @@ function criarFormVazio(categoriaPadrao: string) {
 }
 
 export default function Ocorrencias() {
-  const { fornecedores, contratos, ocorrencias, addOcorrencia, categorias, addCategoria, removeCategoria } = useData();
+  const {
+    fornecedores, contratos, ocorrencias, addOcorrencia, indicadores,
+    eixosPDLS, podeCriar: podeCriarPagina, podeVer,
+  } = useData();
+  const podeCriar = podeCriarPagina('ocorrencias');
+  const podeVerCadastroPDLS = podeVer('cadastroPdls');
 
   const [filtroFornecedor, setFiltroFornecedor] = useState('todos');
   const [filtroIndicador, setFiltroIndicador] = useState('todos');
+  const [filtroEixo, setFiltroEixo] = useState('todos');
   const [expandido, setExpandido] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [showCategorias, setShowCategorias] = useState(false);
-  const [novaCategoria, setNovaCategoria] = useState('');
-  const [form, setForm] = useState(() => criarFormVazio(categorias[0] ?? ''));
+  const [form, setForm] = useState(() => criarFormVazio(eixosPDLS[0]?.id ?? ''));
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [erroArquivo, setErroArquivo] = useState('');
   const [salvando, setSalvando] = useState(false);
 
+  const nomeEixo = (id: string) => {
+    const eixo = eixosPDLS.find((e) => e.id === id);
+    return eixo ? `Eixo ${eixo.numero} – ${eixo.nome}` : '—';
+  };
+
   const filtradas = ocorrencias.filter((o) => {
     if (filtroFornecedor !== 'todos' && o.fornecedorId !== filtroFornecedor) return false;
     if (filtroIndicador !== 'todos' && o.indicadorId !== filtroIndicador) return false;
+    if (filtroEixo !== 'todos' && o.eixoPDLSId !== filtroEixo) return false;
     return true;
   });
 
@@ -89,13 +93,13 @@ export default function Ocorrencias() {
 
   const fecharModal = () => {
     setShowModal(false);
-    setForm(criarFormVazio(categorias[0] ?? ''));
+    setForm(criarFormVazio(eixosPDLS[0]?.id ?? ''));
     setArquivos([]);
     setErroArquivo('');
   };
 
   const handleAdd = async () => {
-    if (!form.fornecedorId || !form.descricao) return;
+    if (!form.fornecedorId || !form.descricao || !form.eixoPDLSId) return;
     setSalvando(true);
     const forn = fornecedores.find((f) => f.id === form.fornecedorId);
     const ind = indicadores.find((i) => i.id === form.indicadorId);
@@ -107,7 +111,7 @@ export default function Ocorrencias() {
       contratoId: form.contratoId,
       indicadorId: form.indicadorId,
       indicadorNome: ind?.nome || '',
-      categoria: form.categoria,
+      eixoPDLSId: form.eixoPDLSId,
       descricao: form.descricao,
       data: form.data || new Date().toISOString().split('T')[0],
       deducao: form.tipoRegistro === 'treinamento' ? 0 : form.deducao,
@@ -121,12 +125,6 @@ export default function Ocorrencias() {
     fecharModal();
   };
 
-  const handleAddCategoria = () => {
-    if (!novaCategoria.trim()) return;
-    addCategoria(novaCategoria);
-    setNovaCategoria('');
-  };
-
   return (
     <div className="page">
       <div className="page-header">
@@ -134,10 +132,12 @@ export default function Ocorrencias() {
           <h1 className="page-title-serif">Ocorrências</h1>
           <p className="page-subtitle">Registro de descumprimentos contratuais e treinamentos de sustentabilidade.</p>
         </div>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
-          <Plus size={16} />
-          Nova Ocorrência
-        </button>
+        {podeCriar && (
+          <button className="btn-primary" onClick={() => setShowModal(true)}>
+            <Plus size={16} />
+            Nova Ocorrência
+          </button>
+        )}
       </div>
 
       {/* Filtros */}
@@ -150,15 +150,17 @@ export default function Ocorrencias() {
           ))}
         </select>
         <select className="filter-select-plain" value={filtroIndicador} onChange={(e) => setFiltroIndicador(e.target.value)}>
-          <option value="todos">Todos macroindicadores</option>
+          <option value="todos">Todos os aspectos de sustentabilidade</option>
           {indicadores.map((i) => (
             <option key={i.id} value={i.id}>{i.nome}</option>
           ))}
         </select>
-        <button className="btn-secondary btn-secondary--sm" onClick={() => setShowCategorias(true)}>
-          <Tag size={13} />
-          Eixos temáticos
-        </button>
+        <select className="filter-select-plain" value={filtroEixo} onChange={(e) => setFiltroEixo(e.target.value)}>
+          <option value="todos">Todos os Eixos PDLS</option>
+          {eixosPDLS.map((e) => (
+            <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>
+          ))}
+        </select>
         <span className="occurrence-count">{filtradas.length} ocorrência{filtradas.length !== 1 ? 's' : ''}</span>
       </div>
 
@@ -176,7 +178,7 @@ export default function Ocorrencias() {
                 >
                   <div className="occurrence-item-left">
                     <span className="occurrence-date">{formatDate(o.data)}</span>
-                    <span className={`badge ${categoriaColors[o.categoria] || 'badge--gray'}`}>{o.categoria}</span>
+                    <span className="badge badge--outline">Eixo {eixosPDLS.find((e) => e.id === o.eixoPDLSId)?.numero ?? '—'}</span>
                     {treinamento && (
                       <span className="badge badge--outline occurrence-badge-treinamento">
                         <GraduationCap size={12} /> Treinamento
@@ -201,8 +203,12 @@ export default function Ocorrencias() {
                         <span className="detail-value">{o.fornecedorNome}</span>
                       </div>
                       <div>
-                        <span className="detail-label">Macroindicador</span>
+                        <span className="detail-label">Aspecto de Sustentabilidade</span>
                         <span className="detail-value">{o.indicadorNome || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="detail-label">Eixo PDLS</span>
+                        <span className="detail-value">{nomeEixo(o.eixoPDLSId)}</span>
                       </div>
                       <div>
                         <span className="detail-label">Registrado por</span>
@@ -307,18 +313,23 @@ export default function Ocorrencias() {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Macroindicador</label>
+              <label className="form-label">Aspecto de Sustentabilidade</label>
               <select className="form-input" value={form.indicadorId} onChange={(e) => setForm({ ...form, indicadorId: e.target.value })}>
                 <option value="">Selecione...</option>
                 {indicadores.map((i) => <option key={i.id} value={i.id}>{i.nome}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Eixo temático</label>
-              <select className="form-input" value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
-                {categorias.length === 0 && <option value="">Nenhum eixo cadastrado</option>}
-                {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
+              <label className="form-label">Eixo PDLS *</label>
+              <select className="form-input" value={form.eixoPDLSId} onChange={(e) => setForm({ ...form, eixoPDLSId: e.target.value })}>
+                {eixosPDLS.length === 0 && <option value="">Nenhum eixo cadastrado</option>}
+                {eixosPDLS.map((e) => <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>)}
               </select>
+              {podeVerCadastroPDLS && (
+                <p className="form-hint form-hint--muted">
+                  Precisa de um eixo novo? Cadastre em <Link to="/estrutura-sustentabilidade">Estrutura de Sustentabilidade</Link>.
+                </p>
+              )}
             </div>
             <div className="form-group form-group--full">
               <label className="form-label">Registrado por (fiscal)</label>
@@ -401,48 +412,6 @@ export default function Ocorrencias() {
         </div>
       )}
 
-      {/* Modal Gerenciar eixos temáticos */}
-      {showCategorias && (
-        <div className="modal-overlay" onClick={() => setShowCategorias(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">Eixos temáticos</h2>
-              <button className="modal-close" onClick={() => setShowCategorias(false)}><X size={18} /></button>
-            </div>
-            <p className="modal-subtitle">
-              Tags de categoria usadas em ocorrências e macroindicadores (Meio Ambiente, Governança, etc.).
-            </p>
-            <div className="tag-manage-list">
-              {categorias.map((c) => (
-                <div key={c} className="tag-manage-item">
-                  <span className={`badge ${categoriaColors[c] || 'badge--gray'}`}>{c}</span>
-                  <button
-                    type="button"
-                    className="anexo-item-remove"
-                    title="Remover eixo"
-                    onClick={() => removeCategoria(c)}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
-              {categorias.length === 0 && <p className="empty-state-sm">Nenhum eixo cadastrado ainda.</p>}
-            </div>
-            <div className="inline-form">
-              <input
-                className="form-input"
-                placeholder="Novo eixo temático — ex: Saúde e Segurança"
-                value={novaCategoria}
-                onChange={(e) => setNovaCategoria(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAddCategoria(); }}
-              />
-              <button className="btn-primary" onClick={handleAddCategoria}>
-                <Plus size={14} /> Adicionar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
