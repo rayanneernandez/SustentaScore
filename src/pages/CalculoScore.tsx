@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell } from 'recharts';
-import { medicoes } from '../data/mockData';
 import { useData } from '../context/DataContext';
 
 function getFaixa(score: number): { label: string; color: string; pct: string } {
@@ -10,7 +9,7 @@ function getFaixa(score: number): { label: string; color: string; pct: string } 
 }
 
 export default function CalculoScore() {
-  const { contratos: todosContratos } = useData();
+  const { contratos: todosContratos, medicoes } = useData();
 
   // Contratos inativos continuam aparecendo aqui, marcados como "(Inativo — histórico)"
   // — servem como informação gerencial para futuras contratações, mas não entram no

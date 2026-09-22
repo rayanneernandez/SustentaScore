@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Plus, Trash2, Pencil, X } from 'lucide-react';
 import { useData } from '../context/DataContext';
-import { PAGINAS_SISTEMA, PERFIL_ADMIN_ID } from '../data/mockData';
+import { PAGINAS_SISTEMA, PERFIL_ADMIN_ID } from '../config/sistema';
 import type { Perfil, PaginaKey } from '../types';
 
 function permissoesVazias(): Perfil['permissoes'] {

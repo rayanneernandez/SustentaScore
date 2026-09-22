@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Plus, ShieldCheck, User, Trash2, Pencil, X } from 'lucide-react';
 import { useData } from '../context/DataContext';
-import { PERFIL_ADMIN_ID, PERFIL_COLABORADOR_ID } from '../data/mockData';
+import { PERFIL_ADMIN_ID, PERFIL_COLABORADOR_ID } from '../config/sistema';
 import type { Usuario } from '../types';
 
 const formUsuarioVazio = { nome: '', email: '', senha: '', cargo: '', perfilId: '' };

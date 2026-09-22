@@ -1,20 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  fornecedores as fornecedoresIniciais,
-  contratos as contratosIniciais,
-  ocorrencias as ocorrenciasIniciais,
-  indicadores as indicadoresIniciais,
-  eixosPDLS as eixosPDLSIniciais,
-  indicadoresPDLS as indicadoresPDLSIniciais,
-  OBJETOS_CONTRATUAIS_PADRAO,
-  USUARIOS_PADRAO,
-  PERFIS_PADRAO,
-  PERFIL_ADMIN_ID,
-  PERFIL_COLABORADOR_ID,
-  PAGINAS_SISTEMA,
-} from '../data/mockData';
+  dbContratos, dbEixosPDLS, dbFornecedores, dbIndicadores, dbIndicadoresPDLS,
+  dbMedicoes, dbNotificacoesLidas, dbObjetosContratuais, dbOcorrencias,
+  dbPerfis, dbScoreHistorico, dbUsuarios,
+} from '../lib/db';
+import { supabaseConfigurado } from '../lib/supabaseClient';
+import { PERFIS_PADRAO, PERFIL_ADMIN_ID, PERFIL_COLABORADOR_ID } from '../config/sistema';
 import type {
-  Anexo,
   Contrato,
   EixoPDLS,
   Fornecedor,
@@ -22,16 +14,20 @@ import type {
   HistoricoTipo,
   Indicador,
   IndicadorPDLS,
+  Medicao,
   Notificacao,
   Ocorrencia,
   PaginaKey,
   Perfil,
-  PermissaoPagina,
+  ScoreHistorico,
   Usuario,
 } from '../types';
 
-const STORAGE_KEY = 'sustentascore:dados:v1';
 export const ALERTA_DIAS_PADRAO = 60;
+
+/** Só guarda "quem está logado neste navegador" — nunca informação de negócio,
+ * essa agora vive inteiramente no Supabase (ver `supabase/schema.sql`). */
+const CHAVE_SESSAO = 'sustentascore:sessao:usuarioId';
 
 // ── Utilitários de data ────────────────────────────────────────────
 export function formatarDataBR(iso?: string): string {
@@ -75,188 +71,76 @@ export function criarEventoHistorico(tipo: HistoricoTipo, descricao: string): Hi
 }
 const novoEvento = criarEventoHistorico;
 
-// ── Carregamento / persistência local ──────────────────────────────
-interface DadosPersistidos {
-  fornecedores: Fornecedor[];
-  contratos: Contrato[];
-  ocorrencias: Ocorrencia[];
-  /** IDs de notificações (de qualquer origem) já marcadas como lidas pelo usuário. */
-  notificacoesLidasIds: string[];
-  /** Macroindicadores de sustentabilidade. */
-  indicadores: Indicador[];
-  /** Os 6 Eixos temáticos do PDLS — nome pode ser editado (ex: renomear "a definir"). */
-  eixosPDLS: EixoPDLS[];
-  /** Indicadores de Desempenho (PDLS), cada um vinculado a um Macroindicador e a um Eixo. */
-  indicadoresPDLS: IndicadorPDLS[];
-  /** Objetos contratuais cadastrados — usados em Cadastro (contrato) e Macroindicadores. */
-  objetosContratuais: string[];
-  /** Usuários do sistema — login local do protótipo (ver aviso em `Usuario`). */
-  usuarios: Usuario[];
-  /** Id do usuário logado nesta sessão (persiste no navegador para não pedir login de novo a cada reload). */
-  usuarioAtualId: string | null;
-  /** Perfis de acesso (padrão + criados pelo usuário) — ver `Perfil` em types/index.ts. */
-  perfis: Perfil[];
-}
-
-/**
- * Normaliza um contrato ao carregar: garante `historico`, `alertaDiasAntes` e
- * migra o formato antigo de anexo único (anexoNome/anexoUrl/...) para a
- * lista `anexos`, usada desde que passou a ser possível anexar mais de um arquivo.
- */
-function migrarContrato(entrada: unknown): Contrato {
-  const c = entrada as Contrato & {
-    anexoNome?: string; anexoUrl?: string; anexoTipo?: string; anexoDataUpload?: string;
-  };
-  let anexos: Anexo[] | undefined = c.anexos;
-  if (!anexos && c.anexoNome && c.anexoUrl) {
-    anexos = [{
-      id: `${c.id}-anexo-legado`,
-      nome: c.anexoNome,
-      url: c.anexoUrl,
-      tipo: c.anexoTipo ?? '',
-      dataUpload: c.anexoDataUpload ?? new Date().toISOString(),
-    }];
-  }
-  const { anexoNome, anexoUrl, anexoTipo, anexoDataUpload, ...resto } = c;
-  void anexoNome; void anexoUrl; void anexoTipo; void anexoDataUpload;
-  return {
-    ...resto,
-    anexos,
-    alertaDiasAntes: resto.alertaDiasAntes ?? ALERTA_DIAS_PADRAO,
-    historico: resto.historico ?? [novoEvento('criacao', 'Contrato cadastrado no sistema.')],
-  };
-}
-
-/**
- * Limpa campos antigos de um Aspecto de Sustentabilidade que não existem mais no
- * tipo `Indicador`: `categoria` (a tag livre "Eixo Temático" de antes da primeira
- * unificação) e `eixoPDLSId` (a "badge" única de Eixo PDLS que o Aspecto chegou a
- * ter por uma rodada, e que foi removida de novo — ver comentário em
- * `types/index.ts`, em `Indicador`). Nenhum dos dois é usado por nada hoje; isso
- * só evita que fiquem chaves mortas acumuladas no `localStorage` de quem já
- * tinha dados salvos numa dessas versões antigas.
- */
-function migrarIndicador(entrada: unknown): Indicador {
-  const i = entrada as Indicador & { categoria?: string; eixoPDLSId?: string };
-  const { categoria, eixoPDLSId, ...resto } = i;
-  void categoria;
-  void eixoPDLSId;
-  return resto;
-}
-
-/**
- * Migra uma Ocorrência salva antes do `eixoPDLSId` existir (ou salva com um id
- * de eixo que não existe mais na lista atual) — cai no primeiro eixo por
- * padrão, mesma lógica de `migrarIndicador`. Sem isso, ocorrências antigas
- * mostram "Eixo —" na lista.
- */
-function migrarOcorrencia(entrada: unknown, eixosAtuais: EixoPDLS[]): Ocorrencia {
-  const o = entrada as Ocorrencia;
-  if (o.eixoPDLSId && eixosAtuais.some((e) => e.id === o.eixoPDLSId)) return o;
-  return { ...o, eixoPDLSId: eixosAtuais[0]?.id ?? 'eixo1' };
-}
-
-/**
- * Migra um usuário salvo no formato antigo (campo `papel: 'administrador' |
- * 'colaborador'`, de antes dos perfis de acesso configuráveis) para o formato
- * atual (`perfilId`), mapeando cada papel antigo para o perfil padrão
- * equivalente. Usuários já no formato novo passam direto.
- */
-function migrarUsuario(entrada: unknown): Usuario {
-  const u = entrada as Usuario & { papel?: 'administrador' | 'colaborador' };
-  if (u.perfilId) return u;
-  const { papel, ...resto } = u;
-  return { ...resto, perfilId: papel === 'administrador' ? PERFIL_ADMIN_ID : PERFIL_COLABORADOR_ID };
-}
-
-/**
- * Migra a permissão de uma tela para o formato atual (4 campos: ver/criar/
- * editar/excluir). Formatos antigos tinham só `ver`/`editar` — quem podia
- * `editar` antes podia criar, editar e excluir (não havia essa distinção), por
- * isso os dois novos campos herdam o valor antigo de `editar`. Telas que não
- * existiam ainda quando o perfil foi salvo (ex: a divisão de "Usuários" e
- * "Perfis de Acesso" em duas telas) entram como totalmente sem acesso, por
- * segurança — quem precisar, o administrador libera manualmente.
- */
-function migrarPermissaoPagina(entrada: unknown): PermissaoPagina {
-  const p = (entrada ?? {}) as Partial<PermissaoPagina> & { editar?: boolean };
-  const legadoEditar = p.editar ?? false;
-  return {
-    ver: p.ver ?? false,
-    criar: p.criar ?? legadoEditar,
-    editar: p.editar ?? false,
-    excluir: p.excluir ?? legadoEditar,
-  };
-}
-
-/**
- * Garante que os dois perfis padrão (Administrador e Colaborador) sempre
- * existam, mesmo em dados salvos antes de perfis configuráveis existirem, e
- * normaliza a grade de permissões de todo perfil salvo (perfis padrão e
- * criados pelo usuário) para o formato atual — preenchendo telas novas e
- * migrando o formato antigo de permissão (ver seção `migrarPermissaoPagina`).
- * O perfil Administrador tem suas permissões sempre forçadas ao acesso total,
- * nunca confiando no que estiver salvo, pois ele é o único caminho garantido
- * de acesso ao sistema.
- */
-function garantirPerfisPadrao(perfis: unknown): Perfil[] {
-  const lista = Array.isArray(perfis) ? (perfis as Perfil[]) : [];
-  const resultado = [...lista];
-  for (const padrao of PERFIS_PADRAO) {
-    if (!resultado.some((p) => p.id === padrao.id)) resultado.unshift(padrao);
-  }
-  const permissoesAdminPadrao = PERFIS_PADRAO.find((p) => p.id === PERFIL_ADMIN_ID)!.permissoes;
-  return resultado.map((p) => {
-    if (p.id === PERFIL_ADMIN_ID) return { ...p, permissoes: permissoesAdminPadrao };
-    const permissoes = PAGINAS_SISTEMA.reduce(
-      (acc, pg) => ({ ...acc, [pg.key]: migrarPermissaoPagina(p.permissoes?.[pg.key]) }),
-      {} as Perfil['permissoes'],
-    );
-    return { ...p, permissoes };
+/** Loga (sem travar a tela) uma falha ao sincronizar uma escrita com o Supabase
+ * — a mudança já foi aplicada localmente (otimista); se a escrita de verdade
+ * falhar, o usuário só vai notar que não "pegou" no próximo recarregamento.
+ * Mesmo nível de robustez que o antigo `try { localStorage.setItem(...) }`. */
+function sincronizar(promessa: Promise<void>, contexto: string): void {
+  promessa.catch((erro) => {
+    // eslint-disable-next-line no-console
+    console.error(`[SustentaScore] Falha ao salvar no banco (${contexto}):`, erro);
   });
 }
 
-function carregarDadosIniciais(): DadosPersistidos {
-  try {
-    const bruto = localStorage.getItem(STORAGE_KEY);
-    if (bruto) {
-      const parsed = JSON.parse(bruto);
-      if (Array.isArray(parsed?.fornecedores) && Array.isArray(parsed?.contratos)) {
-        // Resolvido antes das ocorrências/indicadores porque a migração deles precisa
-        // saber quais eixos existem de fato (inclusive os criados pelo usuário).
-        const eixosPDLS: EixoPDLS[] = Array.isArray(parsed?.eixosPDLS) && parsed.eixosPDLS.length ? parsed.eixosPDLS : eixosPDLSIniciais;
-        return {
-          fornecedores: parsed.fornecedores,
-          contratos: parsed.contratos.map(migrarContrato),
-          ocorrencias: (Array.isArray(parsed?.ocorrencias) ? parsed.ocorrencias : ocorrenciasIniciais).map((o: unknown) => migrarOcorrencia(o, eixosPDLS)),
-          notificacoesLidasIds: Array.isArray(parsed?.notificacoesLidasIds) ? parsed.notificacoesLidasIds : [],
-          indicadores: (Array.isArray(parsed?.indicadores) && parsed.indicadores.length ? parsed.indicadores : indicadoresIniciais).map(migrarIndicador),
-          eixosPDLS,
-          indicadoresPDLS: Array.isArray(parsed?.indicadoresPDLS) ? parsed.indicadoresPDLS : indicadoresPDLSIniciais,
-          objetosContratuais: Array.isArray(parsed?.objetosContratuais) && parsed.objetosContratuais.length
-            ? parsed.objetosContratuais
-            : OBJETOS_CONTRATUAIS_PADRAO,
-          usuarios: (Array.isArray(parsed?.usuarios) && parsed.usuarios.length ? parsed.usuarios : USUARIOS_PADRAO).map(migrarUsuario),
-          usuarioAtualId: typeof parsed?.usuarioAtualId === 'string' ? parsed.usuarioAtualId : null,
-          perfis: garantirPerfisPadrao(parsed?.perfis),
-        };
-      }
+interface DadosCarregados {
+  fornecedores: Fornecedor[];
+  contratos: Contrato[];
+  ocorrencias: Ocorrencia[];
+  medicoes: Medicao[];
+  scoreHistorico: ScoreHistorico[];
+  notificacoesLidasIds: string[];
+  indicadores: Indicador[];
+  eixosPDLS: EixoPDLS[];
+  indicadoresPDLS: IndicadorPDLS[];
+  objetosContratuais: string[];
+  usuarios: Usuario[];
+  perfis: Perfil[];
+}
+
+async function carregarDoSupabase(): Promise<DadosCarregados> {
+  const [
+    fornecedores, contratos, ocorrencias, medicoes, scoreHistorico,
+    notificacoesLidasIds, indicadores, eixosPDLS, indicadoresPDLS,
+    objetosContratuais, usuarios, perfisCarregados,
+  ] = await Promise.all([
+    dbFornecedores.listar('nome'),
+    dbContratos.listar(),
+    dbOcorrencias.listar(),
+    dbMedicoes.listar(),
+    dbScoreHistorico.listar(),
+    dbNotificacoesLidas.listar(),
+    dbIndicadores.listar('nome'),
+    dbEixosPDLS.listar('numero'),
+    dbIndicadoresPDLS.listar(),
+    dbObjetosContratuais.listar(),
+    dbUsuarios.listar(),
+    dbPerfis.listar(),
+  ]);
+
+  // Rede de segurança: garante que os dois perfis padrão sempre existam, mesmo
+  // que o banco tenha sido criado sem rodar o seed de `supabase/schema.sql` —
+  // sem isso o sistema poderia ficar sem nenhum caminho de acesso.
+  const perfis = [...perfisCarregados];
+  for (const padrao of PERFIS_PADRAO) {
+    if (!perfis.some((p) => p.id === padrao.id)) {
+      perfis.unshift(padrao);
+      sincronizar(dbPerfis.inserir(padrao), `recriar perfil padrão ${padrao.nome}`);
     }
-  } catch {
-    // Ignora dados corrompidos e usa os dados de exemplo.
   }
+
   return {
-    fornecedores: fornecedoresIniciais,
-    contratos: contratosIniciais.map(migrarContrato),
-    ocorrencias: ocorrenciasIniciais,
-    notificacoesLidasIds: [],
-    indicadores: indicadoresIniciais,
-    eixosPDLS: eixosPDLSIniciais,
-    indicadoresPDLS: indicadoresPDLSIniciais,
-    objetosContratuais: OBJETOS_CONTRATUAIS_PADRAO,
-    usuarios: USUARIOS_PADRAO,
-    usuarioAtualId: null,
-    perfis: PERFIS_PADRAO,
+    fornecedores,
+    contratos: contratos.map((c) => ({ ...c, historico: c.historico ?? [], alertaDiasAntes: c.alertaDiasAntes ?? ALERTA_DIAS_PADRAO })),
+    ocorrencias,
+    medicoes,
+    scoreHistorico,
+    notificacoesLidasIds,
+    indicadores,
+    eixosPDLS,
+    indicadoresPDLS,
+    objetosContratuais,
+    usuarios,
+    perfis,
   };
 }
 
@@ -316,6 +200,10 @@ interface DataContextValue {
   marcarTodasNotificacoesLidas: (ids: string[]) => void;
   ocorrencias: Ocorrencia[];
   addOcorrencia: (o: Ocorrencia) => void;
+  /** Histórico de medições mensais de todos os contratos (ver Módulo 5 e 6). */
+  medicoes: Medicao[];
+  /** Curva-base usada para desenhar a "Evolução do score médio" no Painel Gerencial. */
+  scoreHistorico: ScoreHistorico[];
   /** Macroindicadores de sustentabilidade. */
   indicadores: Indicador[];
   addIndicador: (i: Indicador) => void;
@@ -330,8 +218,12 @@ interface DataContextValue {
   removeEixoPDLS: (id: string) => boolean;
   /** Indicadores de Desempenho (PDLS), vinculados a um Macroindicador e a um Eixo. */
   indicadoresPDLS: IndicadorPDLS[];
-  /** Indicadores de Desempenho (PDLS) de um Macroindicador em um Eixo específico. */
-  indicadoresPDLSDe: (macroindicadorId: string, eixoId: string) => IndicadorPDLS[];
+  /**
+   * Indicadores de Desempenho (PDLS) de um Macroindicador em um Eixo específico.
+   * Passe `null` em `eixoId` para os indicadores sem vinculação direta a nenhum
+   * Eixo PDLS (`eixoId` não definido — ver comentário em `IndicadorPDLS`).
+   */
+  indicadoresPDLSDe: (macroindicadorId: string, eixoId: string | null) => IndicadorPDLS[];
   addIndicadorPDLS: (i: IndicadorPDLS) => void;
   updateIndicadorPDLS: (id: string, patch: Partial<IndicadorPDLS>) => void;
   removeIndicadorPDLS: (id: string) => void;
@@ -340,12 +232,14 @@ interface DataContextValue {
   addObjetoContratual: (nome: string) => void;
   removeObjetoContratual: (nome: string) => void;
 
-  // ── Usuários, perfis de acesso e sessão (login local — sem backend, ver Usuario) ──
+  // ── Usuários, perfis de acesso e sessão ──────────────────────────
   usuarios: Usuario[];
   /** Usuário logado nesta sessão (null se ninguém logou ainda). */
   usuarioAtual: Usuario | null;
   /** Tenta logar por email+senha; retorna true se as credenciais existirem na lista de usuários. */
-  login: (email: string, senha: string) => boolean;
+  /** `manterConectado`: true grava a sessão no localStorage (sobrevive a fechar o
+   * navegador), false grava no sessionStorage (encerra ao fechar a aba/navegador). */
+  login: (email: string, senha: string, manterConectado: boolean) => boolean;
   logout: () => void;
   addUsuario: (u: Usuario) => void;
   /** Edita nome/cargo/e-mail/senha/perfil de um usuário existente. */
@@ -385,61 +279,106 @@ interface DataContextValue {
 const DataContext = createContext<DataContextValue | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [dados, setDados] = useState<DadosPersistidos>(() => carregarDadosIniciais());
+  const [dados, setDados] = useState<DadosCarregados | null>(null);
+  const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
+  const [usuarioAtualId, setUsuarioAtualId] = useState<string | null>(
+    () => localStorage.getItem(CHAVE_SESSAO) ?? sessionStorage.getItem(CHAVE_SESSAO),
+  );
   // "Ver como outro perfil" — só na sessão atual (não persiste), sempre volta a
   // mostrar o perfil real do usuário quando a página é recarregada.
   const [modoVisualizacao, setModoVisualizacao] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
-    } catch {
-      // Armazenamento indisponível (ex: modo privado) — segue apenas em memória.
-    }
-  }, [dados]);
+    let cancelado = false;
+    carregarDoSupabase()
+      .then((carregados) => {
+        if (!cancelado) setDados(carregados);
+      })
+      .catch((erro: Error) => {
+        if (!cancelado) setErroCarregamento(erro.message);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
+  // ── Fornecedores ────────────────────────────────────────────────
   const addFornecedor = (f: Fornecedor) => {
-    setDados((prev) => ({ ...prev, fornecedores: [...prev.fornecedores, f] }));
+    setDados((prev) => (prev ? { ...prev, fornecedores: [...prev.fornecedores, f] } : prev));
+    sincronizar(dbFornecedores.inserir(f), `novo fornecedor ${f.nome}`);
   };
 
   const updateFornecedor = (id: string, patch: Partial<Fornecedor>) => {
-    setDados((prev) => ({
-      ...prev,
-      fornecedores: prev.fornecedores.map((f) => (f.id === id ? { ...f, ...patch } : f)),
-      // Mantém o nome do fornecedor sincronizado nos contratos já cadastrados dele.
-      contratos: patch.nome
-        ? prev.contratos.map((c) => (c.fornecedorId === id ? { ...c, fornecedorNome: patch.nome as string } : c))
-        : prev.contratos,
-    }));
+    setDados((prev) =>
+      prev
+        ? {
+            ...prev,
+            fornecedores: prev.fornecedores.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+            // Mantém o nome do fornecedor sincronizado nos contratos já cadastrados dele.
+            contratos: patch.nome
+              ? prev.contratos.map((c) => (c.fornecedorId === id ? { ...c, fornecedorNome: patch.nome as string } : c))
+              : prev.contratos,
+          }
+        : prev,
+    );
+    sincronizar(dbFornecedores.atualizar(id, patch), `editar fornecedor ${id}`);
+    if (patch.nome) {
+      sincronizar(dbContratos.atualizarNomeFornecedor(id, patch.nome), `sincronizar nome do fornecedor ${id} nos contratos`);
+    }
   };
 
   const addContrato = (c: Contrato) => {
-    const contratoComHistorico: Contrato = migrarContrato(c);
-    setDados((prev) => ({
-      ...prev,
-      contratos: [...prev.contratos, contratoComHistorico],
-      fornecedores: prev.fornecedores.map((f) =>
-        f.id === c.fornecedorId ? { ...f, contratos: f.contratos + 1 } : f
-      ),
-    }));
+    const contratoComHistorico: Contrato = {
+      ...c,
+      alertaDiasAntes: c.alertaDiasAntes ?? ALERTA_DIAS_PADRAO,
+      historico: c.historico?.length ? c.historico : [novoEvento('criacao', 'Contrato cadastrado no sistema.')],
+    };
+    setDados((prev) =>
+      prev
+        ? {
+            ...prev,
+            contratos: [...prev.contratos, contratoComHistorico],
+            fornecedores: prev.fornecedores.map((f) =>
+              f.id === c.fornecedorId ? { ...f, contratos: f.contratos + 1 } : f,
+            ),
+          }
+        : prev,
+    );
+    sincronizar(dbContratos.inserir(contratoComHistorico), `novo contrato ${c.numero}`);
+    const fornecedorAtual = dados?.fornecedores.find((f) => f.id === c.fornecedorId);
+    if (fornecedorAtual) {
+      sincronizar(
+        dbFornecedores.atualizar(c.fornecedorId, { contratos: fornecedorAtual.contratos + 1 }),
+        `atualizar contagem de contratos do fornecedor ${c.fornecedorId}`,
+      );
+    }
   };
 
   const updateContrato: DataContextValue['updateContrato'] = (id, patch, evento) => {
-    setDados((prev) => ({
-      ...prev,
-      contratos: prev.contratos.map((c) => {
-        if (c.id !== id) return c;
-        const historico = evento ? [...(c.historico ?? []), novoEvento(evento.tipo, evento.descricao)] : c.historico;
-        return { ...c, ...patch, historico };
-      }),
-    }));
+    let historicoNovo: HistoricoEvento[] | undefined;
+    setDados((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        contratos: prev.contratos.map((c) => {
+          if (c.id !== id) return c;
+          const historico = evento ? [...(c.historico ?? []), novoEvento(evento.tipo, evento.descricao)] : c.historico;
+          historicoNovo = historico;
+          return { ...c, ...patch, historico };
+        }),
+      };
+    });
+    sincronizar(
+      dbContratos.atualizar(id, historicoNovo !== undefined ? { ...patch, historico: historicoNovo } : patch),
+      `editar contrato ${id}`,
+    );
   };
 
   const contratosDoFornecedor = (fornecedorId: string) =>
-    dados.contratos.filter((c) => c.fornecedorId === fornecedorId);
+    (dados?.contratos ?? []).filter((c) => c.fornecedorId === fornecedorId);
 
   const contratosAtivosDoFornecedor = (fornecedorId: string) =>
-    dados.contratos.filter((c) => c.fornecedorId === fornecedorId && c.status === 'ativo');
+    (dados?.contratos ?? []).filter((c) => c.fornecedorId === fornecedorId && c.status === 'ativo');
 
   const scoreFornecedor = (fornecedorId: string): number | null => {
     const ativos = contratosAtivosDoFornecedor(fornecedorId);
@@ -448,181 +387,229 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return Math.round(total / ativos.length);
   };
 
+  // ── Notificações ──────────────────────────────────────────────
   const marcarNotificacaoLida = (id: string) => {
     setDados((prev) =>
-      prev.notificacoesLidasIds.includes(id)
+      !prev || prev.notificacoesLidasIds.includes(id)
         ? prev
-        : { ...prev, notificacoesLidasIds: [...prev.notificacoesLidasIds, id] }
+        : { ...prev, notificacoesLidasIds: [...prev.notificacoesLidasIds, id] },
     );
+    sincronizar(dbNotificacoesLidas.marcar(id), `marcar notificação ${id} como lida`);
   };
 
   const marcarTodasNotificacoesLidas = (ids: string[]) => {
-    setDados((prev) => ({
-      ...prev,
-      notificacoesLidasIds: Array.from(new Set([...prev.notificacoesLidasIds, ...ids])),
-    }));
+    setDados((prev) =>
+      prev ? { ...prev, notificacoesLidasIds: Array.from(new Set([...prev.notificacoesLidasIds, ...ids])) } : prev,
+    );
+    sincronizar(dbNotificacoesLidas.marcarVarias(ids), 'marcar notificações como lidas');
   };
 
+  // ── Ocorrências ──────────────────────────────────────────────
   const addOcorrencia = (o: Ocorrencia) => {
-    setDados((prev) => ({ ...prev, ocorrencias: [o, ...prev.ocorrencias] }));
+    setDados((prev) => (prev ? { ...prev, ocorrencias: [o, ...prev.ocorrencias] } : prev));
+    sincronizar(dbOcorrencias.inserir(o), `nova ocorrência ${o.id}`);
   };
 
+  // ── Aspectos de Sustentabilidade (Indicador) ──────────────────
   const addIndicador = (i: Indicador) => {
-    setDados((prev) => ({ ...prev, indicadores: [...prev.indicadores, i] }));
+    setDados((prev) => (prev ? { ...prev, indicadores: [...prev.indicadores, i] } : prev));
+    sincronizar(dbIndicadores.inserir(i), `novo aspecto ${i.nome}`);
   };
 
   const updateIndicador = (id: string, patch: Partial<Indicador>) => {
-    setDados((prev) => ({
-      ...prev,
-      indicadores: prev.indicadores.map((i) => (i.id === id ? { ...i, ...patch } : i)),
-    }));
+    setDados((prev) =>
+      prev ? { ...prev, indicadores: prev.indicadores.map((i) => (i.id === id ? { ...i, ...patch } : i)) } : prev,
+    );
+    sincronizar(dbIndicadores.atualizar(id, patch), `editar aspecto ${id}`);
   };
 
   const removeIndicador = (id: string) => {
-    setDados((prev) => ({
-      ...prev,
-      indicadores: prev.indicadores.filter((i) => i.id !== id),
-      // Remove também os Indicadores de Desempenho (PDLS) que pertenciam a este macroindicador.
-      indicadoresPDLS: prev.indicadoresPDLS.filter((p) => p.macroindicadorId !== id),
-    }));
+    setDados((prev) =>
+      prev
+        ? {
+            ...prev,
+            indicadores: prev.indicadores.filter((i) => i.id !== id),
+            // Remove também os Indicadores de Desempenho (PDLS) que pertenciam a este macroindicador
+            // (no banco, a FK com ON DELETE CASCADE cuida disso do lado do servidor).
+            indicadoresPDLS: prev.indicadoresPDLS.filter((p) => p.macroindicadorId !== id),
+          }
+        : prev,
+    );
+    sincronizar(dbIndicadores.remover(id), `excluir aspecto ${id}`);
   };
 
+  // ── Eixos PDLS ──────────────────────────────────────────────
   const updateEixoPDLS = (id: string, nome: string) => {
     const limpo = nome.trim();
     if (!limpo) return;
-    setDados((prev) => ({
-      ...prev,
-      eixosPDLS: prev.eixosPDLS.map((e) => (e.id === id ? { ...e, nome: limpo } : e)),
-    }));
+    setDados((prev) =>
+      prev ? { ...prev, eixosPDLS: prev.eixosPDLS.map((e) => (e.id === id ? { ...e, nome: limpo } : e)) } : prev,
+    );
+    sincronizar(dbEixosPDLS.atualizar(id, { nome: limpo }), `renomear eixo ${id}`);
   };
 
   const addEixoPDLS = (nome: string) => {
     const limpo = nome.trim();
-    if (!limpo) return;
-    setDados((prev) => {
-      const proximoNumero = Math.max(0, ...prev.eixosPDLS.map((e) => e.numero)) + 1;
-      const novo: EixoPDLS = { id: `eixo-custom-${Date.now()}`, numero: proximoNumero, nome: limpo };
-      return { ...prev, eixosPDLS: [...prev.eixosPDLS, novo] };
-    });
+    if (!limpo || !dados) return;
+    const proximoNumero = Math.max(0, ...dados.eixosPDLS.map((e) => e.numero)) + 1;
+    const novo: EixoPDLS = { id: `eixo-custom-${Date.now()}`, numero: proximoNumero, nome: limpo };
+    setDados((prev) => (prev ? { ...prev, eixosPDLS: [...prev.eixosPDLS, novo] } : prev));
+    sincronizar(dbEixosPDLS.inserir(novo), `novo eixo ${limpo}`);
   };
 
   const removeEixoPDLS = (id: string): boolean => {
-    if (dados.eixosPDLS.length <= 1) return false;
+    if (!dados || dados.eixosPDLS.length <= 1) return false;
     // Um Aspecto de Sustentabilidade "usa" um eixo através de algum Indicador de
     // Desempenho (`IndicadorPDLS.eixoId`) ligado a ele — não tem mais um campo de
     // eixo direto no `Indicador` (ver comentário no tipo, em types/index.ts).
     const emUso = dados.ocorrencias.some((o) => o.eixoPDLSId === id) || dados.indicadoresPDLS.some((p) => p.eixoId === id);
     if (emUso) return false;
-    setDados((prev) => ({ ...prev, eixosPDLS: prev.eixosPDLS.filter((e) => e.id !== id) }));
+    setDados((prev) => (prev ? { ...prev, eixosPDLS: prev.eixosPDLS.filter((e) => e.id !== id) } : prev));
+    sincronizar(dbEixosPDLS.remover(id), `excluir eixo ${id}`);
     return true;
   };
 
-  const indicadoresPDLSDe = (macroindicadorId: string, eixoId: string) =>
-    dados.indicadoresPDLS.filter((p) => p.macroindicadorId === macroindicadorId && p.eixoId === eixoId);
+  // ── Indicadores de Desempenho (PDLS) ──────────────────────────
+  // `eixoId === null` busca os indicadores SEM vinculação a nenhum Eixo PDLS
+  // (campo `eixoId` não definido) — ver comentário em `IndicadorPDLS`.
+  const indicadoresPDLSDe = (macroindicadorId: string, eixoId: string | null) =>
+    (dados?.indicadoresPDLS ?? []).filter(
+      (p) => p.macroindicadorId === macroindicadorId && (eixoId === null ? !p.eixoId : p.eixoId === eixoId),
+    );
 
   const addIndicadorPDLS = (i: IndicadorPDLS) => {
-    setDados((prev) => ({ ...prev, indicadoresPDLS: [...prev.indicadoresPDLS, i] }));
+    setDados((prev) => (prev ? { ...prev, indicadoresPDLS: [...prev.indicadoresPDLS, i] } : prev));
+    sincronizar(dbIndicadoresPDLS.inserir(i), `novo indicador de desempenho ${i.nome}`);
   };
 
   const updateIndicadorPDLS = (id: string, patch: Partial<IndicadorPDLS>) => {
-    setDados((prev) => ({
-      ...prev,
-      indicadoresPDLS: prev.indicadoresPDLS.map((p) => (p.id === id ? { ...p, ...patch } : p)),
-    }));
+    setDados((prev) =>
+      prev
+        ? { ...prev, indicadoresPDLS: prev.indicadoresPDLS.map((p) => (p.id === id ? { ...p, ...patch } : p)) }
+        : prev,
+    );
+    sincronizar(dbIndicadoresPDLS.atualizar(id, patch), `editar indicador de desempenho ${id}`);
   };
 
   const removeIndicadorPDLS = (id: string) => {
-    setDados((prev) => ({ ...prev, indicadoresPDLS: prev.indicadoresPDLS.filter((p) => p.id !== id) }));
+    setDados((prev) => (prev ? { ...prev, indicadoresPDLS: prev.indicadoresPDLS.filter((p) => p.id !== id) } : prev));
+    sincronizar(dbIndicadoresPDLS.remover(id), `excluir indicador de desempenho ${id}`);
   };
 
+  // ── Objetos contratuais ────────────────────────────────────────
   const addObjetoContratual = (nome: string) => {
     const limpo = nome.trim();
-    if (!limpo) return;
-    setDados((prev) =>
-      prev.objetosContratuais.some((o) => o.toLowerCase() === limpo.toLowerCase())
-        ? prev
-        : { ...prev, objetosContratuais: [...prev.objetosContratuais, limpo] }
-    );
+    if (!limpo || !dados) return;
+    if (dados.objetosContratuais.some((o) => o.toLowerCase() === limpo.toLowerCase())) return;
+    setDados((prev) => (prev ? { ...prev, objetosContratuais: [...prev.objetosContratuais, limpo] } : prev));
+    sincronizar(dbObjetosContratuais.inserir(limpo), `novo objeto contratual ${limpo}`);
   };
 
   const removeObjetoContratual = (nome: string) => {
-    setDados((prev) => ({ ...prev, objetosContratuais: prev.objetosContratuais.filter((o) => o !== nome) }));
+    setDados((prev) => (prev ? { ...prev, objetosContratuais: prev.objetosContratuais.filter((o) => o !== nome) } : prev));
+    sincronizar(dbObjetosContratuais.remover(nome), `excluir objeto contratual ${nome}`);
   };
 
-  const usuarioAtual = dados.usuarios.find((u) => u.id === dados.usuarioAtualId) ?? null;
+  // ── Usuários e sessão ──────────────────────────────────────────
+  const usuarioAtual = dados?.usuarios.find((u) => u.id === usuarioAtualId) ?? null;
 
-  const login = (email: string, senha: string): boolean => {
-    const encontrado = dados.usuarios.find(
-      (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.senha === senha
+  const login = (email: string, senha: string, manterConectado: boolean): boolean => {
+    const encontrado = dados?.usuarios.find(
+      (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.senha === senha,
     );
     if (!encontrado) return false;
-    setDados((prev) => ({ ...prev, usuarioAtualId: encontrado.id }));
+    setUsuarioAtualId(encontrado.id);
+    // Só um dos dois guarda a sessão — limpa o outro pra não ficar um resquício
+    // de uma escolha anterior de "manter conectado" fazendo a sessão persistir
+    // (ou não) contra a vontade da usuária dessa vez.
+    if (manterConectado) {
+      localStorage.setItem(CHAVE_SESSAO, encontrado.id);
+      sessionStorage.removeItem(CHAVE_SESSAO);
+    } else {
+      sessionStorage.setItem(CHAVE_SESSAO, encontrado.id);
+      localStorage.removeItem(CHAVE_SESSAO);
+    }
     setModoVisualizacao(null);
     return true;
   };
 
   const logout = () => {
-    setDados((prev) => ({ ...prev, usuarioAtualId: null }));
+    setUsuarioAtualId(null);
+    localStorage.removeItem(CHAVE_SESSAO);
+    sessionStorage.removeItem(CHAVE_SESSAO);
     setModoVisualizacao(null);
   };
 
   const addUsuario = (u: Usuario) => {
-    setDados((prev) => ({ ...prev, usuarios: [...prev.usuarios, u] }));
+    setDados((prev) => (prev ? { ...prev, usuarios: [...prev.usuarios, u] } : prev));
+    sincronizar(dbUsuarios.inserir(u), `novo usuário ${u.email}`);
   };
 
   const updateUsuario = (id: string, patch: Partial<Usuario>) => {
-    setDados((prev) => ({
-      ...prev,
-      usuarios: prev.usuarios.map((u) => (u.id === id ? { ...u, ...patch } : u)),
-    }));
+    setDados((prev) =>
+      prev ? { ...prev, usuarios: prev.usuarios.map((u) => (u.id === id ? { ...u, ...patch } : u)) } : prev,
+    );
+    sincronizar(dbUsuarios.atualizar(id, patch), `editar usuário ${id}`);
   };
 
   const removeUsuario = (id: string): boolean => {
+    if (!dados) return false;
     const alvo = dados.usuarios.find((u) => u.id === id);
     if (!alvo) return false;
     const outrosAdmins = dados.usuarios.some((u) => u.id !== id && u.perfilId === PERFIL_ADMIN_ID);
     if (alvo.perfilId === PERFIL_ADMIN_ID && !outrosAdmins) return false;
-    setDados((prev) => ({
-      ...prev,
-      usuarios: prev.usuarios.filter((u) => u.id !== id),
-      usuarioAtualId: prev.usuarioAtualId === id ? null : prev.usuarioAtualId,
-    }));
+    setDados((prev) => (prev ? { ...prev, usuarios: prev.usuarios.filter((u) => u.id !== id) } : prev));
+    if (usuarioAtualId === id) {
+      setUsuarioAtualId(null);
+      localStorage.removeItem(CHAVE_SESSAO);
+    }
+    sincronizar(dbUsuarios.remover(id), `excluir usuário ${id}`);
     return true;
   };
 
+  // ── Perfis de acesso ────────────────────────────────────────────
   const addPerfil = (p: Perfil) => {
-    setDados((prev) => ({ ...prev, perfis: [...prev.perfis, p] }));
+    setDados((prev) => (prev ? { ...prev, perfis: [...prev.perfis, p] } : prev));
+    sincronizar(dbPerfis.inserir(p), `novo perfil ${p.nome}`);
   };
 
   const updatePerfil = (id: string, patch: Partial<Perfil>) => {
-    setDados((prev) => ({
-      ...prev,
-      perfis: prev.perfis.map((p) => {
-        if (p.id !== id) return p;
-        // O perfil Administrador padrão nunca perde o acesso total — só o nome pode mudar.
-        if (p.id === PERFIL_ADMIN_ID) return { ...p, ...patch, permissoes: p.permissoes, padrao: true };
-        return { ...p, ...patch };
-      }),
-    }));
+    // O perfil Administrador padrão nunca perde o acesso total — só o nome pode mudar.
+    const patchEfetivo: Partial<Perfil> = id === PERFIL_ADMIN_ID ? { ...patch, permissoes: undefined, padrao: true } : patch;
+    setDados((prev) =>
+      prev
+        ? {
+            ...prev,
+            perfis: prev.perfis.map((p) => {
+              if (p.id !== id) return p;
+              if (p.id === PERFIL_ADMIN_ID) return { ...p, ...patch, permissoes: p.permissoes, padrao: true };
+              return { ...p, ...patch };
+            }),
+          }
+        : prev,
+    );
+    sincronizar(dbPerfis.atualizar(id, patchEfetivo), `editar perfil ${id}`);
   };
 
   const removePerfil = (id: string): boolean => {
+    if (!dados) return false;
     const alvo = dados.perfis.find((p) => p.id === id);
     if (!alvo || alvo.padrao) return false;
     const emUso = dados.usuarios.some((u) => u.perfilId === id);
     if (emUso) return false;
-    setDados((prev) => ({ ...prev, perfis: prev.perfis.filter((p) => p.id !== id) }));
+    setDados((prev) => (prev ? { ...prev, perfis: prev.perfis.filter((p) => p.id !== id) } : prev));
+    sincronizar(dbPerfis.remover(id), `excluir perfil ${id}`);
     return true;
   };
 
   const ehAdministradorReal = usuarioAtual?.perfilId === PERFIL_ADMIN_ID;
 
-  const perfilReal = dados.perfis.find((p) => p.id === usuarioAtual?.perfilId) ?? null;
+  const perfilReal = dados?.perfis.find((p) => p.id === usuarioAtual?.perfilId) ?? null;
 
   const perfilEfetivo: Perfil | null = !usuarioAtual
     ? null
     : ehAdministradorReal && modoVisualizacao
-      ? dados.perfis.find((p) => p.id === modoVisualizacao) ?? perfilReal
+      ? dados?.perfis.find((p) => p.id === modoVisualizacao) ?? perfilReal
       : perfilReal;
 
   const podeVer = (pagina: PaginaKey): boolean => !!perfilEfetivo?.permissoes[pagina]?.ver;
@@ -631,6 +618,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const podeExcluir = (pagina: PaginaKey): boolean => !!perfilEfetivo?.permissoes[pagina]?.excluir;
 
   const notificacoes = useMemo<Notificacao[]>(() => {
+    if (!dados) return [];
     const base = gerarNotificacoesVigencia(dados.contratos);
     return base
       .map((n) => ({ ...n, lida: dados.notificacoesLidasIds.includes(n.id) }))
@@ -638,10 +626,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (a.lida !== b.lida) return a.lida ? 1 : -1;
         return ORDEM_URGENCIA[a.urgencia] - ORDEM_URGENCIA[b.urgencia];
       });
-  }, [dados.contratos, dados.notificacoesLidasIds]);
+  }, [dados]);
 
-  const value = useMemo<DataContextValue>(
-    () => ({
+  const value = useMemo<DataContextValue | null>(() => {
+    if (!dados) return null;
+    return {
       fornecedores: dados.fornecedores,
       contratos: dados.contratos,
       addFornecedor,
@@ -656,6 +645,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       marcarTodasNotificacoesLidas,
       ocorrencias: dados.ocorrencias,
       addOcorrencia,
+      medicoes: dados.medicoes,
+      scoreHistorico: dados.scoreHistorico,
       indicadores: dados.indicadores,
       addIndicador,
       updateIndicador,
@@ -691,11 +682,61 @@ export function DataProvider({ children }: { children: ReactNode }) {
       podeCriar,
       podeEditar,
       podeExcluir,
-    }),
-    [dados, notificacoes, usuarioAtual, modoVisualizacao, ehAdministradorReal, perfilEfetivo]
-  );
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    };
+  }, [dados, notificacoes, usuarioAtualId, modoVisualizacao]);
+
+  if (!supabaseConfigurado) {
+    return <TelaAvisoConfiguracao />;
+  }
+
+  if (erroCarregamento) {
+    return <TelaErroCarregamento mensagem={erroCarregamento} />;
+  }
+
+  if (!dados || !value) {
+    return <TelaCarregando />;
+  }
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+}
+
+function TelaCarregando() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', fontFamily: 'sans-serif', color: '#6B7280' }}>
+      Carregando dados do sistema…
+    </div>
+  );
+}
+
+function TelaAvisoConfiguracao() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 32, fontFamily: 'sans-serif' }}>
+      <div style={{ maxWidth: 520, textAlign: 'center', color: '#1C1C1C' }}>
+        <h1 style={{ fontSize: 20, marginBottom: 12 }}>Banco de dados não configurado</h1>
+        <p style={{ color: '#6B7280', lineHeight: 1.5 }}>
+          Falta configurar a conexão com o Supabase. Copie <code>.env.example</code> para <code>.env</code> e preencha
+          <code> VITE_SUPABASE_URL</code> e <code>VITE_SUPABASE_ANON_KEY</code> com os dados do seu projeto (Project
+          Settings → API no painel do Supabase), depois rode <code>npm run dev</code> novamente.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function TelaErroCarregamento({ mensagem }: { mensagem: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 32, fontFamily: 'sans-serif' }}>
+      <div style={{ maxWidth: 520, textAlign: 'center', color: '#1C1C1C' }}>
+        <h1 style={{ fontSize: 20, marginBottom: 12 }}>Não foi possível carregar os dados</h1>
+        <p style={{ color: '#6B7280', lineHeight: 1.5 }}>
+          Verifique se as tabelas já existem no Supabase (rode <code>supabase/schema.sql</code> no SQL Editor do
+          projeto) e se <code>VITE_SUPABASE_URL</code>/<code>VITE_SUPABASE_ANON_KEY</code> estão corretos no <code>.env</code>.
+        </p>
+        <p style={{ color: '#9CA3AF', fontSize: 13, marginTop: 12 }}>Detalhe técnico: {mensagem}</p>
+      </div>
+    </div>
+  );
 }
 
 export function useData(): DataContextValue {

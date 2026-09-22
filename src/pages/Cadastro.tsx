@@ -7,7 +7,6 @@ import {
 } from 'lucide-react';
 import { useData, statusVigencia, diasParaVencimento, formatarDataBR, criarEventoHistorico, ALERTA_DIAS_PADRAO } from '../context/DataContext';
 import { TAMANHO_MAX_ANEXO, MAX_ANEXOS_POR_ENVIO, arquivosParaAnexos } from '../utils/anexos';
-import { medicoes } from '../data/mockData';
 import type { Fornecedor, Contrato, HistoricoTipo, Anexo } from '../types';
 
 // ── Modal Novo / Editar Fornecedor ────────────────────────────────
@@ -464,7 +463,7 @@ function ModalDetalheContrato({
   onClose: () => void;
   onEditar: (c: Contrato) => void;
 }) {
-  const { updateContrato, podeEditar: podeEditarPagina, podeExcluir: podeExcluirPagina } = useData();
+  const { updateContrato, medicoes, podeEditar: podeEditarPagina, podeExcluir: podeExcluirPagina } = useData();
   const podeEditar = podeEditarPagina('cadastro');
   const podeExcluir = podeExcluirPagina('cadastro');
   const [mostrarProrrogacao, setMostrarProrrogacao] = useState(false);

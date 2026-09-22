@@ -35,10 +35,6 @@ import {
   Image as ImageIcon,
   FileSpreadsheet,
 } from 'lucide-react';
-import {
-  scoreHistorico,
-  distribuicaoScore,
-} from '../data/mockData';
 import { useData } from '../context/DataContext';
 import NotificationBell from '../components/NotificationBell';
 import type { LayoutContext } from '../components/Layout';
@@ -47,6 +43,15 @@ const faixasPagamento = [
   { range: '500 a 450', percentual: '100%', status: 'Verde', color: 'verde' },
   { range: '449 a 350', percentual: '95%', status: 'Cinza', color: 'cinza' },
   { range: 'Abaixo de 350', percentual: '90%', status: 'Preto', color: 'preto' },
+];
+
+// Distribuição dos contratos pelas 3 faixas fixas do sistema — as cores/nomes são
+// configuração de UI (não dado do usuário), os valores (`value`) são recalculados
+// a partir dos contratos filtrados em `distribuicaoFiltrada` logo abaixo.
+const distribuicaoScore = [
+  { name: '500 a 450 (Verde)', value: 74, color: '#3D5C3E' },
+  { name: '449 a 350 (Cinza)', value: 34, color: '#9CA3AF' },
+  { name: 'Abaixo de 350 (Preto)', value: 20, color: '#1F2937' },
 ];
 
 const mesesAbreviados = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
@@ -114,7 +119,7 @@ export default function Dashboard() {
   const [menuExportAberto, setMenuExportAberto] = useState(false);
   const [exportando, setExportando] = useState<'imagem' | 'excel' | 'pdf' | null>(null);
 
-  const { contratos: todosContratos, ocorrencias, eixosPDLS } = useData();
+  const { contratos: todosContratos, ocorrencias, eixosPDLS, scoreHistorico } = useData();
 
   // Contratos inativos não são contabilizados no score, nos indicadores nem nos alertas do painel.
   const contratos = useMemo(
@@ -169,7 +174,7 @@ export default function Dashboard() {
 
   const opcoesPeriodo = useMemo(
     () => ['Todos', ...scoreHistorico.map((item) => item.mes)],
-    [],
+    [scoreHistorico],
   );
 
   const contratosFiltrados = useMemo(
@@ -265,7 +270,7 @@ export default function Dashboard() {
 
     const indicePeriodo = serie.findIndex((item) => item.mes === periodo);
     return indicePeriodo >= 0 ? serie.slice(0, indicePeriodo + 1) : serie;
-  }, [periodo, scoreMedio]);
+  }, [periodo, scoreMedio, scoreHistorico]);
 
   /**
    * Evolução do score aplicada por unidade — usa a mesma técnica da série geral
@@ -318,7 +323,7 @@ export default function Dashboard() {
           })();
 
     return { historicoPorUnidade: serieFinal, unidadesDoGrafico: nomesGrafico };
-  }, [contratosFiltrados, mediaScoreGlobal, periodo]);
+  }, [contratosFiltrados, mediaScoreGlobal, periodo, scoreHistorico]);
 
   /** Unidade com a maior média de score entre os contratos ativos — independe dos
    * filtros de Órgão/Unidade (senão a comparação perde sentido), mas respeita

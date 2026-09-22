@@ -30,6 +30,17 @@ const formPDLSVazio: FormPDLS = {
 const NOMES_PASSO = ['Objeto Contratual', 'Aspecto de Sustentabilidade', 'Eixo PDLS', 'Indicador de Desempenho', 'Observações'];
 
 /**
+ * Valor "sentinela" de `eixoSelecionadoId` pra representar, no passo 3, a opção
+ * "este Indicador de Desempenho não tem vinculação com nenhum dos 6 Eixos PDLS"
+ * — existe pra cobrir exigências contratuais/legais que o próprio documento de
+ * origem já marca assim (ex: Saúde e Segurança do Trabalho, Combate ao Trabalho
+ * Infantil). Nunca é salvo como Eixo de verdade (não existe em `eixosPDLS`) —
+ * quando selecionado, o Indicador de Desempenho criado fica com `eixoId`
+ * indefinido (ver `IndicadorPDLS` em types/index.ts).
+ */
+const SEM_VINCULO_PDLS = '__sem_vinculo_pdls__';
+
+/**
  * Tela dedicada de CADASTRO da estrutura de sustentabilidade, em cascata: Objeto
  * Contratual → Aspecto de Sustentabilidade → Eixo PDLS → Indicador de Desempenho
  * → Observações (opcional). Criada porque misturar esse cadastro dentro do
@@ -94,15 +105,19 @@ export default function EstruturaSustentabilidade() {
   const aspectosDoObjeto = indicadores.filter((i) => i.tipo === objetoSelecionado);
   const aspectoSelecionado = indicadores.find((i) => i.id === aspectoSelecionadoId) ?? null;
   const eixoSelecionado = eixosPDLS.find((e) => e.id === eixoSelecionadoId) ?? null;
-  const indicadoresDoEixo = aspectoSelecionado && eixoSelecionado
-    ? indicadoresPDLSDe(aspectoSelecionado.id, eixoSelecionado.id)
+  // Sentinela do passo 3 (ver comentário em `SEM_VINCULO_PDLS`) — não é um Eixo de
+  // verdade, por isso não aparece em `eixosPDLS.find(...)` acima.
+  const semVinculoSelecionado = eixoSelecionadoId === SEM_VINCULO_PDLS;
+  const eixoEtapaValida = eixoSelecionado !== null || semVinculoSelecionado;
+  const indicadoresDoEixo = aspectoSelecionado && eixoEtapaValida
+    ? indicadoresPDLSDe(aspectoSelecionado.id, semVinculoSelecionado ? null : (eixoSelecionado as NonNullable<typeof eixoSelecionado>).id)
     : [];
   const pdlsSelecionado = indicadoresDoEixo.find((p) => p.id === pdlsSelecionadoId) ?? null;
 
   // Até onde a barra de passos deixa saltar direto — um passo só fica alcançável
   // depois que o anterior tem uma seleção válida. O passo 5 (Observações) é opcional,
   // então ele conta pro alcance mas nunca bloqueia nada depois dele (é o último).
-  const maxPasso = 1 + (objetoSelecionado ? 1 : 0) + (aspectoSelecionado ? 1 : 0) + (eixoSelecionado ? 1 : 0) + (pdlsSelecionado ? 1 : 0);
+  const maxPasso = 1 + (objetoSelecionado ? 1 : 0) + (aspectoSelecionado ? 1 : 0) + (eixoEtapaValida ? 1 : 0) + (pdlsSelecionado ? 1 : 0);
 
   // Se uma seleção anterior for desfeita (ex: excluiu o objeto que estava selecionado
   // enquanto já tinha avançado pros passos seguintes), volta pro passo mais avançado
@@ -260,7 +275,7 @@ export default function EstruturaSustentabilidade() {
   };
 
   const salvarPDLS = () => {
-    if (!aspectoSelecionado || !eixoSelecionado || !formPDLS.nome.trim()) return;
+    if (!aspectoSelecionado || !eixoEtapaValida || !formPDLS.nome.trim()) return;
     const meiosVerificacao = formPDLS.meiosVerificacao
       .split('\n')
       .map((linha) => linha.trim())
@@ -280,7 +295,7 @@ export default function EstruturaSustentabilidade() {
       addIndicadorPDLS({
         id: novoId,
         macroindicadorId: aspectoSelecionado.id,
-        eixoId: eixoSelecionado.id,
+        eixoId: semVinculoSelecionado ? undefined : (eixoSelecionado as NonNullable<typeof eixoSelecionado>).id,
         nome: formPDLS.nome,
         meta: formPDLS.meta || undefined,
         unidadeMedida: formPDLS.unidadeMedida,
@@ -360,7 +375,9 @@ export default function EstruturaSustentabilidade() {
   const valorDoPasso = [
     objetoSelecionado || null,
     aspectoSelecionado?.nome ?? null,
-    eixoSelecionado ? `Eixo ${eixoSelecionado.numero} – ${eixoSelecionado.nome}` : null,
+    semVinculoSelecionado
+      ? 'Sem vinculação ao PDLS'
+      : eixoSelecionado ? `Eixo ${eixoSelecionado.numero} – ${eixoSelecionado.nome}` : null,
     pdlsSelecionado?.nome ?? null,
     null,
   ];
@@ -581,6 +598,18 @@ export default function EstruturaSustentabilidade() {
               );
             })}
             {eixosPDLS.length === 0 && <p className="empty-state-sm">Nenhum eixo cadastrado ainda.</p>}
+
+            {/* Pseudo-tab pra indicadores sem vinculação com nenhum Eixo PDLS — não é um
+                Eixo de verdade (não tem lápis/lixeira, não entra em `eixosPDLS`), só uma
+                segunda opção de seleção pro passo 3. Ver comentário em `SEM_VINCULO_PDLS`. */}
+            <button
+              type="button"
+              className={`eixo-tab ${semVinculoSelecionado ? 'eixo-tab--active' : ''} ${indicadoresPDLSDe(aspectoSelecionado.id, null).length > 0 ? 'eixo-tab--cadastrado' : ''}`}
+              onClick={() => selecionarEixo(SEM_VINCULO_PDLS)}
+              title="Para exigências contratuais/legais que não se enquadram em nenhum dos 6 Eixos PDLS"
+            >
+              Sem vinculação direta ao PDLS
+            </button>
           </div>
           {erroEixo && <p className="form-hint form-hint--danger" style={{ marginTop: 8 }}>{erroEixo}</p>}
           {podeCriar && (
@@ -602,7 +631,7 @@ export default function EstruturaSustentabilidade() {
             <button className="btn-secondary" onClick={() => setPasso(2)}>
               <ChevronLeft size={15} /> Voltar
             </button>
-            <button className="btn-primary" disabled={!eixoSelecionado} onClick={() => setPasso(4)}>
+            <button className="btn-primary" disabled={!eixoEtapaValida} onClick={() => setPasso(4)}>
               Avançar <ChevronRight size={15} />
             </button>
           </div>
@@ -610,11 +639,15 @@ export default function EstruturaSustentabilidade() {
       )}
 
       {/* Passo 4: Indicador de Desempenho PDLS */}
-      {passo === 4 && aspectoSelecionado && eixoSelecionado && (
+      {passo === 4 && aspectoSelecionado && eixoEtapaValida && (
         <div className="occurrence-card wizard-card">
           <h3 className="occurrence-section-title">4. Indicador de Desempenho PDLS</h3>
           <p className="form-hint form-hint--muted" style={{ marginBottom: 8 }}>
-            Indicadores de <strong>{aspectoSelecionado.nome}</strong> no Eixo {eixoSelecionado.numero} – {eixoSelecionado.nome}.
+            {semVinculoSelecionado ? (
+              <>Indicadores de <strong>{aspectoSelecionado.nome}</strong> sem vinculação direta ao PDLS.</>
+            ) : (
+              <>Indicadores de <strong>{aspectoSelecionado.nome}</strong> no Eixo {eixoSelecionado!.numero} – {eixoSelecionado!.nome}.</>
+            )}{' '}
             Clique num indicador pra selecioná-lo e (se quiser) adicionar observações no próximo passo.
           </p>
           <div className="pdls-list">

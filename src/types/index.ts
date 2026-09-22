@@ -120,7 +120,15 @@ export type UnidadeMedidaPDLS = 'percentual' | 'quantidade' | 'conformidade' | '
 export interface IndicadorPDLS {
   id: string;
   macroindicadorId: string;
-  eixoId: string;
+  /**
+   * Opcional: algumas exigências contratuais/legais (ex: Saúde e Segurança do
+   * Trabalho, Combate ao Trabalho Infantil) não têm vinculação com nenhum dos 6
+   * Eixos PDLS — o próprio documento de origem já as marca como "Não possui
+   * vinculação direta ao PDLS". Fica `undefined` nesse caso, em vez de forçar
+   * um Eixo qualquer. Ver `indicadoresPDLSDe(macroindicadorId, null)` no
+   * `DataContext` e o passo 3 de `EstruturaSustentabilidade.tsx`.
+   */
+  eixoId?: string;
   nome: string;
   /** Meta de referência (PDLS) — texto livre; a metodologia exata ainda pode ser definida pelo órgão. */
   meta?: string;
@@ -153,8 +161,12 @@ export interface Ocorrencia {
   fornecedorId: string;
   fornecedorNome: string;
   contratoId: string;
-  indicadorId: string;
-  indicadorNome: string;
+  /** Opcional: o formulário de cadastro pede um Aspecto de Sustentabilidade, mas
+   * registros de seed/migração podem ficar sem essa ligação (ex: quando o
+   * Aspecto de exemplo que a ocorrência citava foi removido). A tela já trata
+   * ausência normalmente (`indicadorNome || '—'`). */
+  indicadorId?: string;
+  indicadorNome?: string;
   /** Eixo PDLS (1 a 6) ao qual esta ocorrência está atrelada. */
   eixoPDLSId: string;
   descricao: string;

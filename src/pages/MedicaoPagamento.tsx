@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { FileSpreadsheet, FileText, CheckCircle } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { medicoes } from '../data/mockData';
 import { useData } from '../context/DataContext';
 
 const faixas = [
@@ -20,7 +19,7 @@ function nomeArquivo(contratoNumero: string, extensao: string) {
 }
 
 export default function MedicaoPagamento() {
-  const { contratos: todosContratos } = useData();
+  const { contratos: todosContratos, medicoes } = useData();
   // Contratos inativos não entram na medição/pagamento.
   const contratosAtivos = useMemo(
     () => todosContratos.filter((c) => c.status === 'ativo'),
@@ -80,7 +79,7 @@ export default function MedicaoPagamento() {
 
   const historicoContratoCompleto = useMemo(
     () => (contrato ? medicoes.filter((m) => m.contratoId === contrato.id) : []),
-    [contrato],
+    [contrato, medicoes],
   );
 
   const opcoesMes = useMemo(

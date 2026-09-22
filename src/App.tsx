@@ -12,7 +12,7 @@ import Usuarios from './pages/Usuarios';
 import Perfis from './pages/Perfis';
 import Login from './pages/Login';
 import { DataProvider, useData } from './context/DataContext';
-import { PAGINAS_SISTEMA } from './data/mockData';
+import { PAGINAS_SISTEMA } from './config/sistema';
 import type { PaginaKey } from './types';
 
 /** Caminho da URL de cada tela — usado só para redirecionar quando uma rota é bloqueada. */

@@ -72,8 +72,14 @@ export default function Indicadores() {
   const eixosDoAspecto = (ind: Indicador) =>
     eixosPDLS.filter((eixo) => indicadoresPDLSDe(ind.id, eixo.id).length > 0);
 
+  /** Indicadores de Desempenho do Aspecto sem vinculação com nenhum Eixo PDLS
+   * (`eixoId` indefinido) — exigências contratuais/legais que o documento de
+   * origem já marca assim (ver comentário em `IndicadorPDLS`, types/index.ts). */
+  const semVinculoDoAspecto = (ind: Indicador) => indicadoresPDLSDe(ind.id, null);
+
   const listaFiltrada = lista.filter((i) => {
-    if (filtroEixo !== 'todos' && eixosDoAspecto(i).every((e) => e.id !== filtroEixo)) return false;
+    if (filtroEixo === 'sem-vinculo' && semVinculoDoAspecto(i).length === 0) return false;
+    else if (filtroEixo !== 'todos' && filtroEixo !== 'sem-vinculo' && eixosDoAspecto(i).every((e) => e.id !== filtroEixo)) return false;
     if (filtroTipo !== 'todos' && i.tipo !== filtroTipo) return false;
     return true;
   });
@@ -106,6 +112,7 @@ export default function Indicadores() {
           {eixosPDLS.map((e) => (
             <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>
           ))}
+          <option value="sem-vinculo">Sem vinculação direta ao PDLS</option>
         </select>
         <select className="filter-select-plain" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
           <option value="todos">Todos os objetos</option>
@@ -121,14 +128,23 @@ export default function Indicadores() {
       <div className="indicators-grid">
         {listaFiltrada.map((ind) => {
           const eixos = eixosDoAspecto(ind);
+          const semVinculo = semVinculoDoAspecto(ind);
+          const totalIndicadores = eixos.length + (semVinculo.length > 0 ? 1 : 0);
           return (
             <div key={ind.id} className="indicator-card" onClick={() => setDetalhe(ind)}>
               <div className="indicator-card-top">
                 <div className="indicator-card-badges">
                   <span className="badge badge--outline">{ind.tipo}</span>
-                  <span className="badge badge--outline">
-                    {eixos.length === 0 ? 'Sem Eixo PDLS cadastrado' : `${eixos.length} Eixo${eixos.length !== 1 ? 's' : ''} PDLS`}
-                  </span>
+                  {totalIndicadores === 0 ? (
+                    <span className="badge badge--outline">Sem Eixo PDLS cadastrado</span>
+                  ) : (
+                    <>
+                      {eixos.length > 0 && (
+                        <span className="badge badge--outline">{eixos.length} Eixo{eixos.length !== 1 ? 's' : ''} PDLS</span>
+                      )}
+                      {semVinculo.length > 0 && <span className="badge badge--outline">Sem vinculação ao PDLS</span>}
+                    </>
+                  )}
                 </div>
               </div>
               <div className="indicator-card-heading" style={{ marginBottom: 0 }}>
@@ -160,7 +176,7 @@ export default function Indicadores() {
 
             <div className="detail-block">
               <span className="detail-label">Eixos PDLS e Indicadores de Desempenho</span>
-              {eixosDoAspecto(detalhe).length === 0 ? (
+              {eixosDoAspecto(detalhe).length === 0 && semVinculoDoAspecto(detalhe).length === 0 ? (
                 <p className="empty-state-sm">
                   Nenhum Eixo PDLS cadastrado para este aspecto ainda.
                   {podeVerCadastroPDLS && (
@@ -168,7 +184,8 @@ export default function Indicadores() {
                   )}
                 </p>
               ) : (
-                eixosDoAspecto(detalhe).map((eixo) => (
+                <>
+                {eixosDoAspecto(detalhe).map((eixo) => (
                   <div key={eixo.id} style={{ marginTop: 14 }}>
                     <span className="eixo-nome-atual">Eixo {eixo.numero} – {eixo.nome}</span>
                     <div className="pdls-list" style={{ marginTop: 8 }}>
@@ -212,7 +229,53 @@ export default function Indicadores() {
                       ))}
                     </div>
                   </div>
-                ))
+                ))}
+                {semVinculoDoAspecto(detalhe).length > 0 && (
+                  <div style={{ marginTop: 14 }}>
+                    <span className="eixo-nome-atual">Sem vinculação direta ao PDLS</span>
+                    <div className="pdls-list" style={{ marginTop: 8 }}>
+                      {semVinculoDoAspecto(detalhe).map((p) => (
+                        <div key={p.id} className="pdls-card">
+                          <div className="pdls-card-top">
+                            <span className="pdls-card-nome">{p.nome}</span>
+                          </div>
+                          <div className="pdls-card-meta-row">
+                            <span className="badge badge--outline">{unidadeMedidaLabel[p.unidadeMedida]}</span>
+                            <span className="pdls-card-meta">
+                              Meta: {p.meta ? p.meta : <em>a definir</em>}
+                            </span>
+                          </div>
+                          {p.meiosVerificacao.length > 0 && (
+                            <div className="pdls-meios">
+                              <span className="pdls-meios-titulo"><ClipboardCheck size={13} /> Meios de verificação</span>
+                              <ul className="pdls-meios-list">
+                                {p.meiosVerificacao.map((m) => <li key={m.id}>{m.descricao}</li>)}
+                              </ul>
+                            </div>
+                          )}
+                          {p.referenciaNormativa && <p className="pdls-card-muted pdls-card-referencia">{p.referenciaNormativa}</p>}
+                          {(p.observacoes || (p.anexos && p.anexos.length > 0)) && (
+                            <div className="pdls-meios">
+                              <span className="pdls-meios-titulo"><Paperclip size={13} /> Observações</span>
+                              {p.observacoes && <p className="pdls-card-muted" style={{ marginTop: 4 }}>{p.observacoes}</p>}
+                              {p.anexos && p.anexos.length > 0 && (
+                                <div className="anexo-list" style={{ marginTop: 6 }}>
+                                  {p.anexos.map((anexo) => (
+                                    <a key={anexo.id} className="anexo-item anexo-item-link" href={anexo.url} target="_blank" rel="noreferrer" download={anexo.nome}>
+                                      <Paperclip size={13} />
+                                      <span className="anexo-item-nome">{anexo.nome}</span>
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                </>
               )}
             </div>
 

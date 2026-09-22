@@ -293,25 +293,322 @@ html, body, #root {
 .sidebar-role-toggle:hover { background: var(--bg); }
 .sidebar-role-toggle svg { color: var(--text-muted); flex-shrink: 0; }
 
-/* ─── Login ──────────────────────────────────────────────────── */
+/* ─── Login ──────────────────────────────────────────────────── *
+ * Layout em duas colunas: painel visual com a identidade da marca à
+ * esquerda, formulário à direita (pedido pela usuária, inspirado num
+ * exemplo de outro produto). O painel visual só aparece a partir de
+ * 901px — abaixo disso (ver @media max-width: 900px) ele some e o
+ * logo volta a aparecer dentro do próprio card, como era antes. */
 .login-page {
   height: 100vh;
   width: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
   background: var(--bg);
-  padding: 24px;
+  overflow: hidden;
 }
 
+.login-visual {
+  /* 50/50 com o formulário em qualquer largura de tela — sem max-width, senão
+   * em monitores grandes o painel ficava bem menor que a metade (reportado
+   * pela usuária: "o verde fica mt menos do que a metade da tela"). É a
+   * imagem exata que a usuária mandou — nada desenhado em CSS por cima.
+   * A pedido dela, a imagem precisa preencher o painel de ponta a ponta
+   * (sem faixas/letterbox visíveis), então usamos object-fit: cover — a
+   * imagem preenche 100% da área e o excesso (ela é mais "larga" que o
+   * painel) é cortado nas laterais em vez de aparecer fundo por baixo. */
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #142919;
+  display: flex;
+}
+
+.login-visual-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+.login-visual-decor {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.login-visual-leaf {
+  position: absolute;
+  right: -60px;
+  bottom: -60px;
+  width: 340px;
+  height: 340px;
+  color: #fff;
+  opacity: 0.06;
+  transform: rotate(-12deg);
+}
+
+.login-visual-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(40px);
+}
+
+.login-visual-blob--1 {
+  width: 260px;
+  height: 260px;
+  top: -80px;
+  left: -60px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.login-visual-blob--2 {
+  width: 200px;
+  height: 200px;
+  bottom: 10%;
+  right: 8%;
+  background: var(--accent);
+  opacity: 0.25;
+}
+
+.login-visual-blob--3 {
+  width: 140px;
+  height: 140px;
+  top: 18%;
+  right: 14%;
+  background: var(--primary-light);
+  opacity: 0.3;
+}
+
+.login-visual-blob--4 {
+  width: 90px;
+  height: 90px;
+  bottom: 22%;
+  left: 10%;
+  background: #fff;
+  opacity: 0.05;
+}
+
+/* Folhinhas pequenas espalhadas pelo painel, ecoando o ícone da marca —
+ * puramente decorativas (aria-hidden), em tons claros de verde/branco pra
+ * dar textura sem competir com o texto. */
+.login-visual-icone {
+  position: absolute;
+  opacity: 0.35;
+}
+
+.login-visual-icone--1 { top: 12%; left: 62%; width: 26px; height: 26px; color: var(--accent); transform: rotate(18deg); }
+.login-visual-icone--2 { top: 68%; left: 78%; width: 20px; height: 20px; color: #fff; opacity: 0.22; transform: rotate(-25deg); }
+.login-visual-icone--3 { top: 42%; left: 8%; width: 16px; height: 16px; color: var(--accent); opacity: 0.28; transform: rotate(8deg); }
+.login-visual-icone--4 { bottom: 8%; right: 30%; width: 22px; height: 22px; color: #fff; opacity: 0.16; transform: rotate(40deg); }
+
+.login-visual-content {
+  position: relative;
+  z-index: 1;
+  max-width: 460px;
+}
+
+.login-visual-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 40px;
+}
+
+.login-visual-logo-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-visual-heading {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.3;
+  margin-bottom: 16px;
+}
+
+.login-visual-sub {
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.78);
+  margin-bottom: 32px;
+}
+
+.login-visual-features {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-visual-features li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* Selo circular pro ícone de cada destaque — antes era só um check simples,
+ * a usuária mandou uma referência com um ícone diferente por linha dentro
+ * de um círculo, então trocamos pra esse formato. */
+.login-visual-feature-icone {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+/* ─── Mockup do painel + cards flutuantes (decorativo) ──────────────────
+ * Réplica simplificada, só com CSS/SVG (sem imagem externa), da referência
+ * que a usuária mandou: uma "janela" com uma versão em miniatura do
+ * dashboard, e 3 cartõezinhos brancos flutuando por cima com números de
+ * exemplo. */
+.login-visual-mockup-wrap {
+  position: relative;
+  margin-top: 36px;
+  padding: 20px 28px 8px;
+}
+
+.login-visual-mockup {
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 12px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  transform: rotate(-1.5deg);
+}
+
+.login-visual-mockup-bar {
+  display: flex;
+  gap: 5px;
+  padding: 9px 12px;
+  background: #EDEBE6;
+}
+
+.login-visual-mockup-bar span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #C9C4BA;
+}
+
+.login-visual-mockup-body { padding: 16px; }
+
+.login-visual-mockup-stats {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.login-visual-mockup-stat {
+  flex: 1;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.login-visual-mockup-stat b { font-size: 15px; color: var(--text); line-height: 1; }
+.login-visual-mockup-stat span { font-size: 9px; color: var(--text-muted); }
+
+.login-visual-mockup-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 54px;
+  padding: 0 2px;
+}
+
+.login-visual-mockup-chart span {
+  flex: 1;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--primary) 100%);
+  border-radius: 3px 3px 0 0;
+  opacity: 0.85;
+}
+
+.login-visual-chip {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.login-visual-chip-icone {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary-pale);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.login-visual-chip-valor {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.login-visual-chip-valor span { font-size: 10px; font-weight: 500; color: var(--text-muted); }
+
+.login-visual-chip-legenda { font-size: 9px; color: var(--text-muted); margin-top: 1px; }
+
+.login-visual-chip--1 { top: -4px; left: 8px; transform: rotate(-3deg); }
+.login-visual-chip--2 { top: 34%; right: -6px; transform: rotate(2deg); }
+.login-visual-chip--3 { bottom: -10px; left: 34%; transform: rotate(-2deg); }
+
+.login-form-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.login-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-top: -4px;
+}
+
+.login-checkbox-row input { cursor: pointer; accent-color: var(--primary); }
+
 .login-card {
+  /* Sem caixa/borda/sombra — o formulário fica direto sobre o fundo da
+   * página, igual à referência que a usuária mandou (antes era um card
+   * com borda e sombra). */
   width: 100%;
   max-width: 380px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 28px 26px;
 }
 
 .login-logo {
@@ -319,6 +616,36 @@ html, body, #root {
   align-items: center;
   gap: 10px;
   margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  /* Empilhado (painel em cima, formulário embaixo, rolando a página) em vez
+   * de esconder o painel — pedido explícito da usuária, igual ao exemplo
+   * que ela mandou. */
+  .login-page {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .login-visual {
+    flex: none;
+    width: 100%;
+    aspect-ratio: 1114 / 904;
+    max-height: 46vh;
+  }
+
+  .login-form-panel {
+    flex: none;
+    width: 100%;
+    padding: 24px;
+  }
+}
+
+@media (min-width: 901px) {
+  /* Já mostrado no painel visual — evita repetir o logo dos dois lados. */
+  .login-form-panel .login-logo { display: none; }
 }
 
 .login-logo-title {
@@ -340,6 +667,141 @@ html, body, #root {
   color: var(--text);
   margin-bottom: 16px;
 }
+
+.login-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: -12px;
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+
+.login-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 3px;
+  margin-bottom: 18px;
+}
+
+.login-tab {
+  flex: 1;
+  border: none;
+  background: none;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.login-tab--ativa {
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.input-com-icone--prefixo { position: relative; }
+
+.input-icone-prefixo {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.form-input.form-input--com-prefixo { padding-left: 36px; }
+
+.login-row-entre {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: -4px;
+}
+
+.login-robo-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.login-robo-box:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 12px rgba(44, 74, 46, 0.1);
+}
+
+/* Estado "verificando" — spinner girando, borda já reage. */
+.login-robo-box--verificando { cursor: default; border-color: var(--accent); }
+.login-robo-box--verificando:hover { box-shadow: none; }
+
+/* Estado "verificado" — confirmação visual clara de que passou: fundo e
+ * borda mudam de cor e ganham uma sombra suave, como um selo. */
+.login-robo-box--verificado {
+  background: var(--primary-pale);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+  box-shadow: 0 2px 12px rgba(44, 74, 46, 0.12);
+}
+
+.login-robo-caixa {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.login-robo-box--verificando .login-robo-caixa { border-color: var(--accent); color: var(--accent); }
+
+.login-robo-box--verificado .login-robo-caixa {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  transform: scale(1.06);
+}
+
+.login-robo-spin { animation: login-robo-girar 0.8s linear infinite; }
+
+@keyframes login-robo-girar {
+  to { transform: rotate(360deg); }
+}
+
+.login-info-box {
+  width: 100%;
+  max-width: 380px;
+  background: var(--primary-pale);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.login-info-box .login-hint-title { font-size: 13px; }
 
 .login-form {
   display: flex;
@@ -2153,6 +2615,34 @@ html, body, #root {
 }
 
 .form-input:focus { border-color: var(--primary); }
+
+.input-com-icone {
+  position: relative;
+  display: flex;
+}
+
+.input-com-icone .form-input {
+  flex: 1;
+  padding-right: 36px;
+}
+
+.input-icone-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.input-icone-btn:hover { color: var(--text); background: var(--bg); }
 
 .form-textarea {
   min-height: 72px;
