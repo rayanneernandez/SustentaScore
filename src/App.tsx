@@ -12,6 +12,7 @@ import Usuarios from './pages/Usuarios';
 import Perfis from './pages/Perfis';
 import Login from './pages/Login';
 import { DataProvider, useData } from './context/DataContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { PAGINAS_SISTEMA } from './config/sistema';
 import type { PaginaKey } from './types';
 
@@ -77,10 +78,12 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <DataProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </DataProvider>
+    <ThemeProvider>
+      <DataProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </DataProvider>
+    </ThemeProvider>
   );
 }

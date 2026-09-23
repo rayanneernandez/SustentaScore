@@ -4,6 +4,7 @@
 :root {
   --bg: #F5F1EA;
   --bg-card: #FFFFFF;
+  --bg-subtle: #FAFAF8;
   --primary: #2C4A2E;
   --primary-light: #4A7A4E;
   --primary-pale: #EAF0EA;
@@ -13,11 +14,92 @@
   --border: #E2DDD5;
   --danger: #D9534F;
   --danger-pale: #FDF2F2;
+  --danger-pale-hover: #f9dedd;
   --warning: #E8A838;
   --warning-pale: #FEF9EE;
+  --warning-pale-hover: #fbeed2;
+  --pale-green: #E8F2E8;
+  --pale-gray: #F0EFED;
+  --pale-blue: #EBF2FC;
+  --dot-gray: #9CA3AF;
+  --bar-gray: #C4C4C4;
+  --tone-critical: #1F2937;
+  --scrollbar-thumb: #D1CEC8;
+  --scrollbar-thumb-hover: #B0ACA4;
+  --pale-green-text: #2C4A2E;
+  --pale-gray-text: #4B5563;
+  --pale-blue-text: #1E4080;
+  --pale-warning-text: #92400E;
   --sidebar-w: 240px;
   --radius: 12px;
   --shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+/* ─── Modo escuro ────────────────────────────────────────────────
+ * Ativado via atributo data-theme="dark" na tag <html> (alternado pelo
+ * botão Claro/Escuro no rodapé do menu lateral, persistido no navegador).
+ * Redefine só os tokens de cor — o resto do CSS já usa var(...), então
+ * herda o tema automaticamente sem precisar duplicar regra por regra. */
+:root[data-theme="dark"] {
+  --bg: #15171A;
+  --bg-card: #1E2023;
+  --bg-subtle: #26282B;
+  --primary: #5FA366;
+  --primary-light: #7BBF82;
+  --primary-pale: #22301F;
+  --accent: #6FBF77;
+  --text: #FFFFFF;
+  --text-muted: #FFFFFF;
+  --border: #34373B;
+  --danger: #E27670;
+  --danger-pale: #3A2224;
+  --danger-pale-hover: #472A2C;
+  --warning: #E8A838;
+  --warning-pale: #3A311F;
+  --warning-pale-hover: #473C24;
+  --pale-green: #1E2E21;
+  --pale-gray: #2B2F2A;
+  --pale-blue: #1C2733;
+  --dot-gray: #97A0A8;
+  --bar-gray: #6E767D;
+  --tone-critical: #D8DCE2;
+  --scrollbar-thumb: #454A40;
+  --scrollbar-thumb-hover: #5B6055;
+  --pale-green-text: #8FD9A0;
+  --pale-gray-text: #C3C9CF;
+  --pale-blue-text: #A9C6F0;
+  --pale-warning-text: #F0B673;
+  --shadow: 0 1px 4px rgba(0,0,0,0.35);
+}
+
+/* Modo escuro: alguns estados "ativos" que no claro são um preenchimento
+ * sólido (fundo verde cheio + texto branco) ficam mais discretos aqui —
+ * fundo verde bem suave + texto/ícone verde-claro, em vez de um bloco verde
+ * saturado grande, que num fundo já escuro chamava atenção demais. */
+:root[data-theme="dark"] .sidebar-nav-item--active {
+  background: var(--primary-pale) !important;
+  color: var(--primary-light);
+}
+
+:root[data-theme="dark"] .sidebar-nav-item--active svg,
+:root[data-theme="dark"] .sidebar-nav-item--active .sidebar-nav-num {
+  color: var(--primary-light);
+}
+
+:root[data-theme="dark"] .sidebar-theme-btn--ativo,
+:root[data-theme="dark"] .periodo-modo-btn--ativo {
+  background: var(--primary-pale);
+  color: var(--primary-light);
+}
+
+:root[data-theme="dark"] .sidebar-theme-btn--ativo:hover,
+:root[data-theme="dark"] .periodo-modo-btn--ativo:hover {
+  color: var(--primary-light);
+}
+
+:root[data-theme="dark"] .chart-title,
+:root[data-theme="dark"] .legend-count {
+  color: var(--text);
 }
 
 html, body, #root {
@@ -56,7 +138,7 @@ html, body, #root {
 .sidebar {
   width: var(--sidebar-w);
   min-width: var(--sidebar-w);
-  background: #fff;
+  background: var(--bg-card);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -199,6 +281,44 @@ html, body, #root {
   gap: 2px;
 }
 
+.sidebar-theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 999px;
+  padding: 3px;
+  margin: 2px 0 8px;
+}
+
+.sidebar-theme-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  padding: 6px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sidebar-theme-btn:hover { color: var(--text); }
+
+.sidebar-theme-btn--ativo {
+  background: var(--primary);
+  color: #fff;
+}
+
+.sidebar-theme-btn--ativo:hover { color: #fff; }
+
 .sidebar-footer-btn {
   display: flex;
   align-items: center;
@@ -283,7 +403,7 @@ html, body, #root {
   padding: 4px 10px;
   border-radius: 20px;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--bg-card);
   color: var(--text);
   font-size: 11.5px;
   font-weight: 600;
@@ -311,11 +431,15 @@ html, body, #root {
   /* 50/50 com o formulário em qualquer largura de tela — sem max-width, senão
    * em monitores grandes o painel ficava bem menor que a metade (reportado
    * pela usuária: "o verde fica mt menos do que a metade da tela"). É a
-   * imagem exata que a usuária mandou — nada desenhado em CSS por cima.
-   * A pedido dela, a imagem precisa preencher o painel de ponta a ponta
-   * (sem faixas/letterbox visíveis), então usamos object-fit: cover — a
-   * imagem preenche 100% da área e o excesso (ela é mais "larga" que o
-   * painel) é cortado nas laterais em vez de aparecer fundo por baixo. */
+   * imagem que a usuária mandou — o conteúdo (logo, título, laptop) não foi
+   * redesenhado; só esticamos o fundo verde-escuro dela pra cima/baixo (mesmo
+   * degradê, sem nenhum elemento novo) pra deixar o arquivo num formato mais
+   * parecido com o do painel (retrato em vez de paisagem), porque o original
+   * era bem mais largo que alto e precisava de um corte lateral grande demais
+   * pra preencher a tela sem sobrar fundo. Mesmo assim ainda sobra imagem
+   * (object-fit: cover) e cortamos o excesso — object-position: left faz
+   * esse corte sempre sair do lado direito (o laptop pode perder um pouco
+   * da borda em telas estreitas), nunca do esquerdo (logo/título/lista). */
   flex: 1;
   position: relative;
   overflow: hidden;
@@ -327,7 +451,7 @@ html, body, #root {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center;
+  object-position: left center;
   display: block;
 }
 
@@ -385,7 +509,7 @@ html, body, #root {
   height: 90px;
   bottom: 22%;
   left: 10%;
-  background: #fff;
+  background: var(--bg-card);
   opacity: 0.05;
 }
 
@@ -546,7 +670,7 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 10px;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
   padding: 8px 12px;
@@ -632,7 +756,7 @@ html, body, #root {
   .login-visual {
     flex: none;
     width: 100%;
-    aspect-ratio: 1114 / 904;
+    aspect-ratio: 1114 / 1359;
     max-height: 46vh;
   }
 
@@ -875,7 +999,7 @@ html, body, #root {
  * `max-width` (centralizando com `margin:auto` e deixando o fundo cinza-claro do
  * `.main-content` visível dos dois lados em monitores muito largos). */
 .dashboard-header {
-  background: #fff;
+  background: var(--bg-card);
   padding: 20px 32px;
   border-bottom: 1px solid var(--border);
 }
@@ -949,7 +1073,7 @@ html, body, #root {
   right: 0;
   z-index: 1000;
   min-width: 230px;
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -1008,7 +1132,7 @@ html, body, #root {
   padding: 7px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--bg-card);
   cursor: pointer;
   font-size: 13px;
   min-width: 140px;
@@ -1019,10 +1143,10 @@ html, body, #root {
 
 .filter-select-input {
   min-width: 180px;
-  padding: 9px 12px;
+  padding: 9px 30px 9px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--bg-card);
   font-size: 13px;
   color: var(--text);
   outline: none;
@@ -1031,6 +1155,7 @@ html, body, #root {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
+  width: 100%;
 }
 
 .filter-select-input:focus,
@@ -1045,6 +1170,127 @@ html, body, #root {
   min-width: 130px;
 }
 
+/* `appearance: none` acima tira a setinha nativa do <select> — sem repor, o
+ * campo não parece clicável/expansível. Este wrapper sobrepõe um ícone de
+ * seta (lucide) no lugar de onde a nativa ficava. */
+.filter-select-wrap {
+  position: relative;
+}
+
+.filter-select-chevron {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* ─── Seletor de período (Mês/Ano) ───────────────────────────────
+ * Substitui o antigo <select> de "Período" por um alternador Mês/Ano +
+ * setinhas de navegação, no estilo pedido pela usuária (referência de outro
+ * produto): dois "pills" lado a lado — o alternador de modo e o navegador de
+ * período — mais um botão circular pra voltar rápido pro período atual. */
+.periodo-navegador {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 270px;
+}
+
+.periodo-modo-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  border-radius: 999px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+
+.periodo-modo-btn {
+  border: none;
+  background: none;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.periodo-modo-btn:hover { color: var(--text); }
+
+.periodo-modo-btn--ativo {
+  background: var(--primary);
+  color: #fff;
+}
+
+.periodo-modo-btn--ativo:hover { color: #fff; }
+
+.periodo-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  border-radius: 999px;
+  padding: 5px 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.periodo-stepper-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.periodo-stepper-btn:hover { background: var(--bg); color: var(--primary); }
+
+.periodo-stepper-label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  text-align: center;
+}
+
+.periodo-reset-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.periodo-reset-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-pale);
+}
+
 .btn-clear-filter {
   display: flex;
   align-items: center;
@@ -1052,7 +1298,7 @@ html, body, #root {
   padding: 7px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--bg-card);
   font-size: 13px;
   color: var(--text-muted);
   cursor: pointer;
@@ -1074,7 +1320,7 @@ html, body, #root {
 }
 
 .kpi-card {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
@@ -1135,7 +1381,7 @@ html, body, #root {
 }
 
 .chart-card {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
@@ -1242,7 +1488,7 @@ html, body, #root {
 }
 
 .table-card {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
@@ -1371,8 +1617,8 @@ html, body, #root {
 }
 
 .status-badge--verde .status-dot { background: var(--accent); }
-.status-badge--cinza .status-dot { background: #9CA3AF; }
-.status-badge--preto .status-dot { background: #1F2937; }
+.status-badge--cinza .status-dot { background: var(--dot-gray); }
+.status-badge--preto .status-dot { background: var(--tone-critical); }
 
 .status-dot-only {
   display: inline-block;
@@ -1382,8 +1628,8 @@ html, body, #root {
 }
 
 .status-dot-only--verde { background: var(--accent); }
-.status-dot-only--cinza { background: #9CA3AF; }
-.status-dot-only--preto { background: #1F2937; }
+.status-dot-only--cinza { background: var(--dot-gray); }
+.status-dot-only--preto { background: var(--tone-critical); }
 
 /* Table footer */
 .table-footer {
@@ -1405,7 +1651,7 @@ html, body, #root {
 
 /* ─── Alerts ─────────────────────────────────────────────────── */
 .alerts-card {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
@@ -1490,7 +1736,7 @@ html, body, #root {
   align-items: center;
   gap: 6px;
   padding: 9px 18px;
-  background: #fff;
+  background: var(--bg-card);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1521,7 +1767,7 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0 14px;
@@ -1549,7 +1795,7 @@ html, body, #root {
 .supplier-card-wrapper {
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--bg-card);
   overflow: hidden;
   transition: box-shadow 0.15s;
 }
@@ -1570,7 +1816,7 @@ html, body, #root {
   border-bottom: 1px solid var(--border);
 }
 
-.supplier-card:hover { background: #FAFAF8; }
+.supplier-card:hover { background: var(--bg-subtle); }
 
 .supplier-card-icon {
   width: 40px;
@@ -1626,7 +1872,7 @@ html, body, #root {
 }
 
 .indicator-card {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 22px;
@@ -1700,7 +1946,7 @@ html, body, #root {
   height: 28px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--bg-card);
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s;
@@ -1731,7 +1977,7 @@ html, body, #root {
 .indicator-action-btn:disabled:hover {
   border-color: var(--border);
   color: var(--text-muted);
-  background: #fff;
+  background: var(--bg-card);
 }
 
 .modal-subtitle {
@@ -1754,9 +2000,9 @@ html, body, #root {
   font-weight: 500;
 }
 
-.badge--green { background: #E8F2E8; color: #2C4A2E; }
-.badge--gray  { background: #F0EFED; color: #4B5563; }
-.badge--blue  { background: #EBF2FC; color: #1E4080; }
+.badge--green { background: var(--pale-green); color: var(--pale-green-text); }
+.badge--gray  { background: var(--pale-gray); color: var(--pale-gray-text); }
+.badge--blue  { background: var(--pale-blue); color: var(--pale-blue-text); }
 .badge--outline { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
 
 /* ─── Ocorrências ────────────────────────────────────────────── */
@@ -1772,7 +2018,7 @@ html, body, #root {
   padding: 8px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--bg-card);
   font-size: 13px;
   color: var(--text);
   outline: none;
@@ -1791,7 +2037,7 @@ html, body, #root {
 .text-muted { color: var(--text-muted); }
 
 .occurrence-card {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 24px;
@@ -1939,7 +2185,7 @@ html, body, #root {
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text-muted);
-  background: #fff;
+  background: var(--bg-card);
   border: none;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -1984,7 +2230,7 @@ html, body, #root {
   padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 20px;
-  background: #fff;
+  background: var(--bg-card);
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text-muted);
@@ -2047,6 +2293,16 @@ html, body, #root {
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.pdls-card-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
 }
 
 .pdls-card-nome {
@@ -2178,7 +2434,7 @@ html, body, #root {
   padding: 9px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--bg-card);
   font-size: 13px;
   color: var(--text);
   outline: none;
@@ -2194,7 +2450,7 @@ html, body, #root {
 
 .score-gauge-card,
 .score-detail-card {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 24px;
@@ -2334,13 +2590,13 @@ html, body, #root {
   font-weight: 500;
 }
 
-.history-status--liberado { background: #E8F2E8; color: #2C4A2E; }
-.history-status--pendente { background: var(--warning-pale); color: #92400E; }
+.history-status--liberado { background: var(--pale-green); color: var(--pale-green-text); }
+.history-status--pendente { background: var(--warning-pale); color: var(--pale-warning-text); }
 .history-status--bloqueado { background: var(--danger-pale); color: var(--danger); }
 
 /* ─── Medição e Pagamento ────────────────────────────────────── */
 .payment-card {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 24px;
@@ -2384,8 +2640,8 @@ html, body, #root {
 }
 
 .payment-bar-segment--green { flex: 3; background: var(--primary); }
-.payment-bar-segment--gray  { flex: 2; background: #C4C4C4; }
-.payment-bar-segment--dark  { flex: 2; background: #9CA3AF; }
+.payment-bar-segment--gray  { flex: 2; background: var(--bar-gray); }
+.payment-bar-segment--dark  { flex: 2; background: var(--dot-gray); }
 
 .payment-faixas {
   display: flex;
@@ -2404,7 +2660,7 @@ html, body, #root {
 }
 
 .payment-faixa--active {
-  background: #EAF0EA;
+  background: var(--primary-pale);
   border-color: var(--primary);
 }
 
@@ -2426,15 +2682,6 @@ html, body, #root {
 .payment-faixa-pct { color: var(--text-muted); }
 
 .payment-faixa--active .payment-faixa-pct { color: var(--text); font-weight: 500; }
-
-.payment-faixa-atual-badge {
-  background: var(--primary);
-  color: #fff;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-}
 
 .payment-history-header {
   display: flex;
@@ -2503,8 +2750,8 @@ html, body, #root {
   font-weight: 500;
 }
 
-.history-item-status--liberado { background: #E8F2E8; color: #2C4A2E; }
-.history-item-status--pendente { background: var(--warning-pale); color: #92400E; }
+.history-item-status--liberado { background: var(--pale-green); color: var(--pale-green-text); }
+.history-item-status--pendente { background: var(--warning-pale); color: var(--pale-warning-text); }
 .history-item-status--bloqueado { background: var(--danger-pale); color: var(--danger); }
 
 /* ─── Modal ──────────────────────────────────────────────────── */
@@ -2519,7 +2766,7 @@ html, body, #root {
 }
 
 .modal {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: var(--radius);
   padding: 28px;
   width: 440px;
@@ -2611,7 +2858,7 @@ html, body, #root {
   outline: none;
   transition: border-color 0.15s;
   font-family: inherit;
-  background: #fff;
+  background: var(--bg-card);
 }
 
 .form-input:focus { border-color: var(--primary); }
@@ -2659,7 +2906,7 @@ html, body, #root {
 /* ─── Supplier Detail (expanded) ────────────────────────────── */
 .supplier-detail {
   padding: 16px 20px 20px;
-  background: #FAFAF8;
+  background: var(--bg-subtle);
 }
 
 .supplier-detail-header {
@@ -2688,7 +2935,7 @@ html, body, #root {
   padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--bg-card);
   color: var(--text-muted);
   font-size: 12.5px;
   cursor: pointer;
@@ -2765,7 +3012,7 @@ html, body, #root {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
@@ -2808,18 +3055,28 @@ html, body, #root {
   margin-top: 2px;
 }
 
-.contract-item-score {
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 3px 9px;
-  border-radius: 20px;
-  white-space: nowrap;
+.contract-item-score-total {
+  text-align: right;
   flex-shrink: 0;
+  line-height: 1.1;
 }
 
-.contract-item-score--verde { background: var(--primary-pale); color: var(--primary); }
-.contract-item-score--cinza { background: #F0EFED; color: #4B5563; }
-.contract-item-score--preto { background: #E9E9EB; color: #1F2937; }
+.contract-item-score-total-value {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 20px;
+  font-weight: 600;
+  display: block;
+  line-height: 1;
+}
+
+.contract-item-score-total--verde .contract-item-score-total-value { color: var(--primary); }
+.contract-item-score-total--cinza .contract-item-score-total-value { color: var(--pale-gray-text); }
+.contract-item-score-total--preto .contract-item-score-total-value { color: var(--tone-critical); }
+
+.contract-item-score-total-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
 
 .contract-item-edit-btn {
   display: flex;
@@ -2830,7 +3087,7 @@ html, body, #root {
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--bg-card);
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s;
@@ -2849,8 +3106,15 @@ html, body, #root {
   font-weight: 500;
 }
 
-.contract-status--ativo   { background: #E8F2E8; color: #2C4A2E; }
-.contract-status--inativo { background: #F0EFED; color: #6B7280; }
+.contract-status--ativo   { background: var(--pale-green); color: var(--pale-green-text); }
+.contract-status--inativo { background: var(--pale-gray); color: var(--text-muted); }
+
+.contract-item-num .contract-status {
+  margin-left: 8px;
+  vertical-align: 1px;
+  font-size: 10.5px;
+  padding: 2px 8px;
+}
 
 .empty-state-sm {
   font-size: 12.5px;
@@ -2869,8 +3133,8 @@ html, body, #root {
 /* ─── Scrollbar ──────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #D1CEC8; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #B0ACA4; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
 @media (max-width: 1100px) {
   .charts-grid,
@@ -2918,7 +3182,7 @@ html, body, #root {
 }
 
 .form-hint--danger { color: var(--danger); }
-.form-hint--warning { color: #92400E; background: var(--warning-pale); padding: 8px 10px; border-radius: 8px; margin-top: 8px; }
+.form-hint--warning { color: var(--pale-warning-text); background: var(--warning-pale); padding: 8px 10px; border-radius: 8px; margin-top: 8px; }
 .form-hint--muted { color: var(--text-muted); margin-top: 6px; }
 
 /* ─── Upload de arquivo ──────────────────────────────────────── */
@@ -2958,8 +3222,8 @@ html, body, #root {
   white-space: nowrap;
 }
 
-.vigencia-badge--ok { background: #E8F2E8; color: #2C4A2E; }
-.vigencia-badge--alerta { background: var(--warning-pale); color: #92400E; }
+.vigencia-badge--ok { background: var(--pale-green); color: var(--pale-green-text); }
+.vigencia-badge--alerta { background: var(--warning-pale); color: var(--pale-warning-text); }
 .vigencia-badge--vencido { background: var(--danger-pale); color: var(--danger); }
 
 .contract-item-anexo-icon {
@@ -3079,11 +3343,11 @@ html, body, #root {
 }
 
 .historico-tag--criacao { background: var(--primary-pale); color: var(--primary); }
-.historico-tag--edicao { background: #EBF2FC; color: #1E4080; }
-.historico-tag--status { background: #F0EFED; color: #4B5563; }
-.historico-tag--prorrogacao { background: var(--warning-pale); color: #92400E; }
-.historico-tag--anexo { background: #E8F2E8; color: #2C4A2E; }
-.historico-tag--observacao { background: #F0EFED; color: #4B5563; }
+.historico-tag--edicao { background: var(--pale-blue); color: var(--pale-blue-text); }
+.historico-tag--status { background: var(--pale-gray); color: var(--pale-gray-text); }
+.historico-tag--prorrogacao { background: var(--warning-pale); color: var(--pale-warning-text); }
+.historico-tag--anexo { background: var(--pale-green); color: var(--pale-green-text); }
+.historico-tag--observacao { background: var(--pale-gray); color: var(--pale-gray-text); }
 
 .historico-item-body { flex: 1; }
 .historico-desc { font-size: 12.5px; color: var(--text); line-height: 1.4; }
@@ -3094,6 +3358,7 @@ html, body, #root {
   display: flex;
   justify-content: flex-end;
   padding: 14px 32px 0;
+  background: var(--bg-card);
 }
 
 /* No Dashboard (telas ≥901px), a faixa superior não tem nenhum conteúdo visível — o
@@ -3116,7 +3381,7 @@ html, body, #root {
   height: 38px;
   border-radius: 50%;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--bg-card);
   color: var(--text);
   cursor: pointer;
 }
@@ -3133,14 +3398,14 @@ html, body, #root {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  border: 1px solid var(--border);
-  background: #fff;
+  border: none;
+  background: none;
   color: var(--text);
   cursor: pointer;
   transition: background 0.15s;
 }
 
-.notif-bell:hover { background: var(--bg); }
+.notif-bell:hover { background: var(--bg-subtle); }
 
 .notif-badge {
   position: absolute;
@@ -3179,7 +3444,7 @@ html, body, #root {
   width: 340px;
   max-width: 88vw;
   overflow-y: auto;
-  background: #fff;
+  background: var(--bg-card);
   border-left: 1px solid var(--border);
   box-shadow: -8px 0 24px rgba(0,0,0,0.10);
   z-index: 1000;
@@ -3253,9 +3518,9 @@ html, body, #root {
 
 .notif-item:hover { background: var(--border); }
 .notif-item--alta { background: var(--danger-pale); }
-.notif-item--alta:hover { background: #f9dedd; }
+.notif-item--alta:hover { background: var(--danger-pale-hover); }
 .notif-item--media { background: var(--warning-pale); }
-.notif-item--media:hover { background: #fbeed2; }
+.notif-item--media:hover { background: var(--warning-pale-hover); }
 .notif-item--baixa { background: var(--bg); }
 .notif-item--alta svg { color: var(--danger); flex-shrink: 0; margin-top: 1px; }
 .notif-item--media svg { color: var(--warning); flex-shrink: 0; margin-top: 1px; }
@@ -3447,7 +3712,7 @@ html, body, #root {
   padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--bg-card);
   cursor: pointer;
   text-align: left;
   min-width: 0;

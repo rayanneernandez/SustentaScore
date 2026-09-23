@@ -907,6 +907,9 @@ function FornecedorCard({
                       title={`Score: ${c.score} pontos`}
                     />
                     {c.numero}
+                    <span className={`contract-status contract-status--${c.status}`}>
+                      {c.status === 'ativo' ? 'Ativo' : 'Inativo'}
+                    </span>
                     {!!c.anexos?.length && (
                       <span className="contract-item-anexo-icon" title={`${c.anexos.length} anexo(s)`}>
                         <Paperclip size={12} /> {c.anexos.length}
@@ -917,7 +920,6 @@ function FornecedorCard({
                     {[c.objeto, c.unidade].filter(Boolean).join(' · ')}
                   </div>
                 </div>
-                <span className={`contract-item-score contract-item-score--${c.faixa}`}>{c.score} pts</span>
                 <BadgeVigencia contrato={c} />
                 {podeEditar && (
                   <button
@@ -928,9 +930,10 @@ function FornecedorCard({
                     <Pencil size={13} />
                   </button>
                 )}
-                <span className={`contract-status contract-status--${c.status}`}>
-                  {c.status === 'ativo' ? 'Ativo' : 'Inativo'}
-                </span>
+                <div className={`contract-item-score-total contract-item-score-total--${c.faixa}`}>
+                  <span className="contract-item-score-total-value">{c.score}</span>
+                  <span className="contract-item-score-total-label">pontos</span>
+                </div>
               </div>
             ))}
           </div>

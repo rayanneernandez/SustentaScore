@@ -26,6 +26,9 @@ import {
   DollarSign,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
   Award,
   Calendar,
   Filter,
@@ -36,6 +39,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
+import { useTheme } from '../context/ThemeContext';
 import NotificationBell from '../components/NotificationBell';
 import type { LayoutContext } from '../components/Layout';
 
@@ -56,19 +60,18 @@ const distribuicaoScore = [
 
 const mesesAbreviados = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
+// Nomes completos, usados no novo seletor de período (Mês/Ano) e no relatório exportado.
+const nomesMesesExtenso = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
 // Paleta categórica validada (ordem fixa, distinguível em daltonismo) — usada para as
 // linhas de "evolução do score por unidade". Acima de 6 unidades, o excedente é
 // agrupado em "Outras unidades" na cor neutra, para não poluir o gráfico.
 const CORES_UNIDADE = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7'];
 const COR_OUTRAS_UNIDADES = '#9CA3AF';
 const MAX_LINHAS_UNIDADE = 6;
-
-function normalizarPeriodoDaData(data: string) {
-  const [ano, mes] = data.split('-');
-  const indiceMes = Number(mes) - 1;
-  const anoCurto = ano.slice(-2);
-  return `${mesesAbreviados[indiceMes]}/${anoCurto}`;
-}
 
 function limitarScore(score: number) {
   return Math.max(0, Math.min(500, Math.round(score)));
@@ -108,11 +111,80 @@ const EXCEL_COR_BORDA = 'FFE2DDD5'; // var(--border)
 
 export default function Dashboard() {
   const { notifAberto, setNotifAberto } = useOutletContext<LayoutContext>();
+  const { tema } = useTheme();
+  // Os gráficos (Recharts) desenham texto em SVG com cor fixa via prop `fill` —
+  // não seguem var(--text) do CSS sozinhos, então cor de eixo/rótulo precisa
+  // ser escolhida aqui conforme o tema, senão fica ilegível no modo escuro
+  // (texto quase preto num cartão quase preto).
+  const corTextoMuted = tema === 'escuro' ? '#FFFFFF' : '#6B7280';
+  const corTextoForte = tema === 'escuro' ? '#FFFFFF' : '#1C1C1C';
+  // Linha/ponto do gráfico "Evolução do Score Médio" continuam na cor de
+  // destaque (verde) — só o texto (rótulo do valor) fica branco no escuro,
+  // a pedido da Rayanne, pra garantir leitura em cima do cartão escuro.
+  const corLinhaScore = tema === 'escuro' ? '#7BBF82' : '#3D5C3E';
+  const corRotuloScore = tema === 'escuro' ? '#FFFFFF' : '#3D5C3E';
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [orgao, setOrgao] = useState('Todos');
   const [contrato, setContrato] = useState('Todos');
   const [fornecedor, setFornecedor] = useState('Todos');
-  const [periodo, setPeriodo] = useState('Todos');
+  // Seletor de período novo (Mês/Ano com setinhas, no lugar do dropdown de antes).
+  // Guardamos ano/mês como números (em vez de um Date) pra não ter que lidar com
+  // rollover de dia ao virar mês/ano — só incrementamos/decrementamos o número certo.
+  const agora = new Date();
+  const [modoPeriodo, setModoPeriodo] = useState<'mes' | 'ano'>('mes');
+  const [anoFiltro, setAnoFiltro] = useState(agora.getFullYear());
+  const [mesFiltro, setMesFiltro] = useState(agora.getMonth() + 1); // 1-12
+
+  // "Última atualização" do cabeçalho — reflete o momento em que o Painel foi
+  // aberto/recarregado (antes ficava fixo em "31/05/2024 10:30", uma data de
+  // exemplo que nunca mudava).
+  const doisDigitos = (n: number) => String(n).padStart(2, '0');
+  const ultimaAtualizacaoStr = `${doisDigitos(agora.getDate())}/${doisDigitos(agora.getMonth() + 1)}/${agora.getFullYear()} ${doisDigitos(agora.getHours())}:${doisDigitos(agora.getMinutes())}`;
+
+  const irPeriodoAnterior = () => {
+    if (modoPeriodo === 'mes') {
+      if (mesFiltro === 1) {
+        setMesFiltro(12);
+        setAnoFiltro((a) => a - 1);
+      } else {
+        setMesFiltro((m) => m - 1);
+      }
+    } else {
+      setAnoFiltro((a) => a - 1);
+    }
+  };
+
+  const irProximoPeriodo = () => {
+    if (modoPeriodo === 'mes') {
+      if (mesFiltro === 12) {
+        setMesFiltro(1);
+        setAnoFiltro((a) => a + 1);
+      } else {
+        setMesFiltro((m) => m + 1);
+      }
+    } else {
+      setAnoFiltro((a) => a + 1);
+    }
+  };
+
+  const resetarPeriodo = () => {
+    const hoje = new Date();
+    setAnoFiltro(hoje.getFullYear());
+    setMesFiltro(hoje.getMonth() + 1);
+  };
+
+  // 'mmm/aa' (ex: "mai/24") — mesmo formato de `scoreHistorico[].mes`, só existe
+  // no modo Mês (é o que usamos pra achar até onde cortar a linha de evolução).
+  const periodoStrHistorico = modoPeriodo === 'mes' ? `${mesesAbreviados[mesFiltro - 1]}/${String(anoFiltro).slice(-2)}` : null;
+
+  const labelPeriodoNavegador =
+    modoPeriodo === 'mes' ? `${nomesMesesExtenso[mesFiltro - 1]} / ${anoFiltro}` : String(anoFiltro);
+
+  const labelPeriodoCurto =
+    modoPeriodo === 'mes' ? `${mesesAbreviados[mesFiltro - 1]}/${String(anoFiltro).slice(-2)}` : String(anoFiltro);
+
+  const labelPeriodoExtenso =
+    modoPeriodo === 'mes' ? `${nomesMesesExtenso[mesFiltro - 1]} de ${anoFiltro}` : String(anoFiltro);
   const [expandido, setExpandido] = useState(false);
   const [modoEvolucao, setModoEvolucao] = useState<'geral' | 'unidade'>('geral');
   const [mostrarTodosMenoresScore, setMostrarTodosMenoresScore] = useState(false);
@@ -172,11 +244,6 @@ export default function Dashboard() {
     }
   }, [opcoesFornecedor, fornecedor]);
 
-  const opcoesPeriodo = useMemo(
-    () => ['Todos', ...scoreHistorico.map((item) => item.mes)],
-    [scoreHistorico],
-  );
-
   const contratosFiltrados = useMemo(
     () =>
       contratos.filter((item) => {
@@ -197,10 +264,14 @@ export default function Dashboard() {
     () =>
       ocorrencias.filter((item) => {
         const matchContrato = idsContratosFiltrados.has(item.contratoId);
-        const matchPeriodo = periodo === 'Todos' || normalizarPeriodoDaData(item.data) === periodo;
+        const [anoItemStr, mesItemStr] = item.data.split('-');
+        const anoItem = Number(anoItemStr);
+        const mesItem = Number(mesItemStr);
+        const matchPeriodo =
+          modoPeriodo === 'mes' ? anoItem === anoFiltro && mesItem === mesFiltro : anoItem === anoFiltro;
         return matchContrato && matchPeriodo;
       }),
-    [idsContratosFiltrados, periodo],
+    [idsContratosFiltrados, ocorrencias, modoPeriodo, anoFiltro, mesFiltro],
   );
 
   const scoreMedio = useMemo(() => {
@@ -264,13 +335,20 @@ export default function Dashboard() {
       score: limitarScore(item.score + ajuste),
     }));
 
-    if (periodo === 'Todos') {
-      return serie;
-    }
+    // Corta a linha até o período selecionado (mesma lógica de antes) — no modo
+    // Mês, até o mês exato; no modo Ano, até o último mês daquele ano. Se o
+    // período escolhido não existir no histórico (ex: ano atual, sem dado ainda),
+    // mostra a série inteira em vez de cortar tudo.
+    let indiceCorte = -1;
+    serie.forEach((item, indice) => {
+      const anoItem = 2000 + Number(item.mes.split('/')[1]);
+      const dentroDoRecorte =
+        modoPeriodo === 'mes' ? item.mes === periodoStrHistorico : anoItem === anoFiltro;
+      if (dentroDoRecorte) indiceCorte = indice;
+    });
 
-    const indicePeriodo = serie.findIndex((item) => item.mes === periodo);
-    return indicePeriodo >= 0 ? serie.slice(0, indicePeriodo + 1) : serie;
-  }, [periodo, scoreMedio, scoreHistorico]);
+    return indiceCorte >= 0 ? serie.slice(0, indiceCorte + 1) : serie;
+  }, [modoPeriodo, anoFiltro, periodoStrHistorico, scoreMedio, scoreHistorico]);
 
   /**
    * Evolução do score aplicada por unidade — usa a mesma técnica da série geral
@@ -314,16 +392,18 @@ export default function Dashboard() {
       return linha;
     });
 
-    const serieFinal =
-      periodo === 'Todos'
-        ? serie
-        : (() => {
-            const indicePeriodo = serie.findIndex((item) => item.mes === periodo);
-            return indicePeriodo >= 0 ? serie.slice(0, indicePeriodo + 1) : serie;
-          })();
+    let indiceCorte = -1;
+    serie.forEach((item, indice) => {
+      const anoItem = 2000 + Number((item.mes as string).split('/')[1]);
+      const dentroDoRecorte =
+        modoPeriodo === 'mes' ? item.mes === periodoStrHistorico : anoItem === anoFiltro;
+      if (dentroDoRecorte) indiceCorte = indice;
+    });
+
+    const serieFinal = indiceCorte >= 0 ? serie.slice(0, indiceCorte + 1) : serie;
 
     return { historicoPorUnidade: serieFinal, unidadesDoGrafico: nomesGrafico };
-  }, [contratosFiltrados, mediaScoreGlobal, periodo, scoreHistorico]);
+  }, [contratosFiltrados, mediaScoreGlobal, modoPeriodo, anoFiltro, periodoStrHistorico, scoreHistorico]);
 
   /** Unidade com a maior média de score entre os contratos ativos — independe dos
    * filtros de Órgão/Unidade (senão a comparação perde sentido), mas respeita
@@ -379,7 +459,7 @@ export default function Dashboard() {
     [ocorrenciasAgrupadas],
   );
 
-  const labelPeriodo = periodo === 'Todos' ? 'todos os períodos' : periodo;
+  const labelPeriodo = labelPeriodoCurto;
   // O wrapper externo (alvo da API de fullscreen) NÃO tem a classe `page` — ela
   // ficou só no `<div className="page">` interno, que envolve filtros/KPIs/gráficos.
   // Isso deixa o `dashboard-header` (o cabeçalho branco) como um irmão fora desse
@@ -392,7 +472,7 @@ export default function Dashboard() {
     setOrgao('Todos');
     setContrato('Todos');
     setFornecedor('Todos');
-    setPeriodo('Todos');
+    resetarPeriodo();
   };
 
   const alternarFullscreen = async () => {
@@ -424,7 +504,7 @@ export default function Dashboard() {
         ['Órgão / Unidade', orgao],
         ['Contrato', contrato],
         ['Fornecedor', fornecedor],
-        ['Período', periodo],
+        ['Período', `${modoPeriodo === 'mes' ? 'Mês' : 'Ano'}: ${labelPeriodoExtenso}`],
       ],
     });
 
@@ -724,7 +804,7 @@ export default function Dashboard() {
           <div className="dashboard-last-update-row">
             <div className="dashboard-last-update">
               <Calendar size={14} />
-              <span>Última atualização:<br />31/05/2024 10:30</span>
+              <span>Última atualização:<br />{ultimaAtualizacaoStr}</span>
             </div>
             <div className="dashboard-export-hide">
               <NotificationBell aberto={notifAberto} onAbrirChange={setNotifAberto} />
@@ -743,43 +823,85 @@ export default function Dashboard() {
       <div className="filters-bar">
         <div className="filter-group">
           <label className="filter-label">Órgão / Unidade</label>
-          <select className="filter-select-input" value={orgao} onChange={(event) => setOrgao(event.target.value)}>
-            {opcoesOrgao.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+          <div className="filter-select-wrap">
+            <select className="filter-select-input" value={orgao} onChange={(event) => setOrgao(event.target.value)}>
+              {opcoesOrgao.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="filter-select-chevron" aria-hidden="true" />
+          </div>
         </div>
         <div className="filter-group">
           <label className="filter-label">Contrato</label>
-          <select className="filter-select-input" value={contrato} onChange={(event) => setContrato(event.target.value)}>
-            {opcoesContrato.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+          <div className="filter-select-wrap">
+            <select className="filter-select-input" value={contrato} onChange={(event) => setContrato(event.target.value)}>
+              {opcoesContrato.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="filter-select-chevron" aria-hidden="true" />
+          </div>
         </div>
         <div className="filter-group">
           <label className="filter-label">Fornecedor</label>
-          <select className="filter-select-input" value={fornecedor} onChange={(event) => setFornecedor(event.target.value)}>
-            {opcoesFornecedor.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+          <div className="filter-select-wrap">
+            <select className="filter-select-input" value={fornecedor} onChange={(event) => setFornecedor(event.target.value)}>
+              {opcoesFornecedor.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="filter-select-chevron" aria-hidden="true" />
+          </div>
         </div>
         <div className="filter-group">
           <label className="filter-label">Período</label>
-          <select className="filter-select-input filter-select-input--date" value={periodo} onChange={(event) => setPeriodo(event.target.value)}>
-            {opcoesPeriodo.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+          <div className="periodo-navegador">
+            <div className="periodo-modo-toggle" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={modoPeriodo === 'mes'}
+                className={`periodo-modo-btn ${modoPeriodo === 'mes' ? 'periodo-modo-btn--ativo' : ''}`}
+                onClick={() => setModoPeriodo('mes')}
+              >
+                Mês
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={modoPeriodo === 'ano'}
+                className={`periodo-modo-btn ${modoPeriodo === 'ano' ? 'periodo-modo-btn--ativo' : ''}`}
+                onClick={() => setModoPeriodo('ano')}
+              >
+                Ano
+              </button>
+            </div>
+            <div className="periodo-stepper">
+              <button type="button" className="periodo-stepper-btn" onClick={irPeriodoAnterior} aria-label="Período anterior">
+                <ChevronLeft size={15} />
+              </button>
+              <span className="periodo-stepper-label">{labelPeriodoNavegador}</span>
+              <button type="button" className="periodo-stepper-btn" onClick={irProximoPeriodo} aria-label="Próximo período">
+                <ChevronRight size={15} />
+              </button>
+            </div>
+            <button
+              type="button"
+              className="periodo-reset-btn"
+              onClick={resetarPeriodo}
+              aria-label="Voltar para o período atual"
+              title="Voltar para o período atual"
+            >
+              <RotateCcw size={13} />
+            </button>
+          </div>
         </div>
         <button className="btn-clear-filter" onClick={limparFiltros}>
           <Filter size={14} />
@@ -889,8 +1011,8 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={historicoFiltrado} margin={{ top: 20, right: 20, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E1D8" />
-                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 500]} ticks={[0, 100, 200, 300, 400, 500]} tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: corTextoMuted }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 500]} ticks={[0, 100, 200, 300, 400, 500]} tick={{ fontSize: 11, fill: corTextoMuted }} axisLine={false} tickLine={false} />
                 <Tooltip
                   contentStyle={{ borderRadius: 8, border: '1px solid #E5E1D8', fontSize: 12 }}
                   labelStyle={{ color: '#1C1C1C', fontWeight: 600 }}
@@ -898,12 +1020,12 @@ export default function Dashboard() {
                 <Line
                   type="monotone"
                   dataKey="score"
-                  stroke="#3D5C3E"
+                  stroke={corLinhaScore}
                   strokeWidth={2.5}
-                  dot={{ fill: '#3D5C3E', r: 4 }}
+                  dot={{ fill: corLinhaScore, r: 4 }}
                   activeDot={{ r: 6 }}
                 >
-                  <LabelList dataKey="score" position="top" style={{ fontSize: 11, fill: '#3D5C3E', fontWeight: 600 }} />
+                  <LabelList dataKey="score" position="top" style={{ fontSize: 11, fill: corRotuloScore, fontWeight: 600 }} />
                 </Line>
               </LineChart>
             </ResponsiveContainer>
@@ -911,8 +1033,8 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={historicoPorUnidade} margin={{ top: 12, right: 20, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E1D8" />
-                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 500]} ticks={[0, 100, 200, 300, 400, 500]} tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: corTextoMuted }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 500]} ticks={[0, 100, 200, 300, 400, 500]} tick={{ fontSize: 11, fill: corTextoMuted }} axisLine={false} tickLine={false} />
                 <Tooltip
                   contentStyle={{ borderRadius: 8, border: '1px solid #E5E1D8', fontSize: 12 }}
                   labelStyle={{ color: '#1C1C1C', fontWeight: 600 }}
@@ -948,7 +1070,7 @@ export default function Dashboard() {
                 type="category"
                 dataKey="tipo"
                 width={140}
-                tick={{ fontSize: 12, fill: '#1C1C1C' }}
+                tick={{ fontSize: 12, fill: corTextoForte }}
                 axisLine={false}
                 tickLine={false}
               />
@@ -956,7 +1078,7 @@ export default function Dashboard() {
                 contentStyle={{ borderRadius: 8, border: '1px solid #E5E1D8', fontSize: 12 }}
               />
               <Bar dataKey="total" fill="#5C8B5F" radius={[0, 4, 4, 0]} barSize={16}>
-                <LabelList dataKey="total" position="right" style={{ fontSize: 12, fill: '#1C1C1C', fontWeight: 600 }} />
+                <LabelList dataKey="total" position="right" style={{ fontSize: 12, fill: corTextoForte, fontWeight: 600 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>

@@ -192,7 +192,10 @@ export default function Indicadores() {
                       {indicadoresPDLSDe(detalhe.id, eixo.id).map((p) => (
                         <div key={p.id} className="pdls-card">
                           <div className="pdls-card-top">
-                            <span className="pdls-card-nome">{p.nome}</span>
+                            <div>
+                              <span className="pdls-card-label">Indicador de Desempenho (PDLS)</span>
+                              <span className="pdls-card-nome">{p.nome}</span>
+                            </div>
                           </div>
                           <div className="pdls-card-meta-row">
                             <span className="badge badge--outline">{unidadeMedidaLabel[p.unidadeMedida]}</span>
@@ -237,7 +240,10 @@ export default function Indicadores() {
                       {semVinculoDoAspecto(detalhe).map((p) => (
                         <div key={p.id} className="pdls-card">
                           <div className="pdls-card-top">
-                            <span className="pdls-card-nome">{p.nome}</span>
+                            <div>
+                              <span className="pdls-card-label">Indicador de Desempenho (PDLS)</span>
+                              <span className="pdls-card-nome">{p.nome}</span>
+                            </div>
                           </div>
                           <div className="pdls-card-meta-row">
                             <span className="badge badge--outline">{unidadeMedidaLabel[p.unidadeMedida]}</span>

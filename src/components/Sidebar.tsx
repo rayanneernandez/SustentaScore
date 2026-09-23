@@ -11,9 +11,12 @@ import {
   HelpCircle,
   LogOut,
   Repeat,
+  Sun,
+  Moon,
   X,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
+import { useTheme } from '../context/ThemeContext';
 import type { PaginaKey } from '../types';
 
 const navOperacional: { to: string; label: string; icon: typeof Users; num: number; pagina: PaginaKey }[] = [
@@ -31,6 +34,7 @@ const navGerencial: { to: string; label: string; icon: typeof Users; num: number
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { usuarioAtual, perfis, perfilEfetivo, podeVer, ehAdministradorReal, modoVisualizacao, setModoVisualizacao, logout } = useData();
+  const { tema, alternarTema } = useTheme();
 
   return (
     <aside className={`sidebar${open ? ' sidebar--open' : ''}`}>
@@ -133,6 +137,22 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
 
       {/* Footer */}
       <div className="sidebar-footer">
+        <div className="sidebar-theme-toggle">
+          <button
+            type="button"
+            className={`sidebar-theme-btn ${tema === 'claro' ? 'sidebar-theme-btn--ativo' : ''}`}
+            onClick={() => tema !== 'claro' && alternarTema()}
+          >
+            <Sun size={13} /> Claro
+          </button>
+          <button
+            type="button"
+            className={`sidebar-theme-btn ${tema === 'escuro' ? 'sidebar-theme-btn--ativo' : ''}`}
+            onClick={() => tema !== 'escuro' && alternarTema()}
+          >
+            <Moon size={13} /> Escuro
+          </button>
+        </div>
         {usuarioAtual && (
           <div className="sidebar-user">
             <div className="sidebar-user-info">

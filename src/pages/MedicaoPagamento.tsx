@@ -248,9 +248,6 @@ export default function MedicaoPagamento() {
                 <span className="payment-faixa-arrow">→</span>
                 <span className="payment-faixa-pct">{f.label}</span>
               </div>
-              {i === currentFaixaIndex && (
-                <span className="payment-faixa-atual-badge">Atual</span>
-              )}
             </div>
           ))}
         </div>
