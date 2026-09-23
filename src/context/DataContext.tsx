@@ -212,8 +212,13 @@ interface DataContextValue {
   /** Eixos PDLS — 6 originais + os que forem criados pelo usuário (ver `addEixoPDLS`). */
   eixosPDLS: EixoPDLS[];
   updateEixoPDLS: (id: string, nome: string) => void;
-  /** Cria um novo Eixo PDLS, com o próximo número disponível (não precisa mais ficar só nos 6 originais). */
-  addEixoPDLS: (nome: string) => void;
+  /**
+   * Cria um novo Eixo PDLS. Se `numero` não for informado, usa o próximo número
+   * disponível (não precisa mais ficar só nos 6 originais) — mas o número pode
+   * ser escolhido manualmente (ex: pra reaproveitar o "slot" de um eixo oficial
+   * ainda sem nome, como Eixo 2/4/5). Ver uso em `EstruturaSustentabilidade.tsx`.
+   */
+  addEixoPDLS: (nome: string, numero?: number) => void;
   /** Remove um Eixo PDLS — recusa se ainda estiver em uso (por alguma Ocorrência ou Aspecto de Sustentabilidade) ou se for o único restante. */
   removeEixoPDLS: (id: string) => boolean;
   /** Indicadores de Desempenho (PDLS), vinculados a um Macroindicador e a um Eixo. */
@@ -448,11 +453,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     sincronizar(dbEixosPDLS.atualizar(id, { nome: limpo }), `renomear eixo ${id}`);
   };
 
-  const addEixoPDLS = (nome: string) => {
+  const addEixoPDLS = (nome: string, numero?: number) => {
     const limpo = nome.trim();
     if (!limpo || !dados) return;
-    const proximoNumero = Math.max(0, ...dados.eixosPDLS.map((e) => e.numero)) + 1;
-    const novo: EixoPDLS = { id: `eixo-custom-${Date.now()}`, numero: proximoNumero, nome: limpo };
+    const numeroFinal = numero ?? Math.max(0, ...dados.eixosPDLS.map((e) => e.numero)) + 1;
+    const novo: EixoPDLS = { id: `eixo-custom-${Date.now()}`, numero: numeroFinal, nome: limpo };
     setDados((prev) => (prev ? { ...prev, eixosPDLS: [...prev.eixosPDLS, novo] } : prev));
     sincronizar(dbEixosPDLS.inserir(novo), `novo eixo ${limpo}`);
   };

@@ -89,6 +89,7 @@ export default function EstruturaSustentabilidade() {
   const [renomeandoEixoId, setRenomeandoEixoId] = useState<string | null>(null);
   const [nomeEixoEditado, setNomeEixoEditado] = useState('');
   const [novoEixoPDLS, setNovoEixoPDLS] = useState('');
+  const [novoEixoNumero, setNovoEixoNumero] = useState('');
   const [erroEixo, setErroEixo] = useState('');
 
   const [formPDLS, setFormPDLS] = useState<FormPDLS>(formPDLSVazio);
@@ -105,6 +106,10 @@ export default function EstruturaSustentabilidade() {
   const aspectosDoObjeto = indicadores.filter((i) => i.tipo === objetoSelecionado);
   const aspectoSelecionado = indicadores.find((i) => i.id === aspectoSelecionadoId) ?? null;
   const eixoSelecionado = eixosPDLS.find((e) => e.id === eixoSelecionadoId) ?? null;
+  // Eixos oficiais que ainda não têm nome definido ("a definir") ficam de fora
+  // dos seletores — pra usuária eles simplesmente não existem ainda; quando for
+  // preciso, ela cadastra um Eixo PDLS novo normalmente (ver `handleAddEixo`).
+  const eixosNomeados = eixosPDLS.filter((e) => !e.nome.toLowerCase().includes('a definir'));
   // Sentinela do passo 3 (ver comentário em `SEM_VINCULO_PDLS`) — não é um Eixo de
   // verdade, por isso não aparece em `eixosPDLS.find(...)` acima.
   const semVinculoSelecionado = eixoSelecionadoId === SEM_VINCULO_PDLS;
@@ -228,8 +233,35 @@ export default function EstruturaSustentabilidade() {
 
   const handleAddEixo = () => {
     if (!novoEixoPDLS.trim()) return;
-    addEixoPDLS(novoEixoPDLS);
+
+    // Número é opcional — em branco, cai no próximo disponível (comportamento
+    // antigo). Mas dá pra escolher manualmente, principalmente pra retomar um
+    // dos eixos oficiais que ainda estão "a definir" (2, 4, 5): nesse caso, em
+    // vez de duplicar, a gente só dá nome ao eixo que já existe naquele número.
+    const numeroDigitado = novoEixoNumero.trim() ? Number(novoEixoNumero) : undefined;
+    if (numeroDigitado !== undefined && (!Number.isInteger(numeroDigitado) || numeroDigitado < 1)) {
+      setErroEixo('Número do eixo inválido.');
+      return;
+    }
+
+    if (numeroDigitado !== undefined) {
+      const existente = eixosPDLS.find((e) => e.numero === numeroDigitado);
+      if (existente) {
+        if (!existente.nome.toLowerCase().includes('a definir')) {
+          setErroEixo(`Já existe um Eixo ${numeroDigitado} cadastrado (${existente.nome}). Escolha outro número ou edite o eixo existente.`);
+          return;
+        }
+        updateEixoPDLS(existente.id, novoEixoPDLS);
+        setNovoEixoPDLS('');
+        setNovoEixoNumero('');
+        setErroEixo('');
+        return;
+      }
+    }
+
+    addEixoPDLS(novoEixoPDLS, numeroDigitado);
     setNovoEixoPDLS('');
+    setNovoEixoNumero('');
     setErroEixo('');
   };
 
@@ -424,25 +456,26 @@ export default function EstruturaSustentabilidade() {
       {passo === 1 && (
         <div className="occurrence-card wizard-card">
           <h3 className="occurrence-section-title">1. Objeto Contratual</h3>
-          <div className="eixo-tabs">
-            {objetosContratuais.map((o) => (
-              <div key={o} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <button
-                  type="button"
-                  className={`eixo-tab ${o === objetoSelecionado ? 'eixo-tab--active' : ''}`}
-                  onClick={() => selecionarObjeto(o)}
-                >
-                  {o}
-                </button>
-                {podeExcluir && (
-                  <button type="button" className="anexo-item-remove" title="Remover objeto" onClick={() => handleRemoveObjeto(o)}>
-                    <Trash2 size={12} />
-                  </button>
-                )}
-              </div>
-            ))}
+          <div className="form-group" style={{ maxWidth: 460 }}>
+            <select
+              className="form-input"
+              value={objetoSelecionado}
+              onChange={(e) => selecionarObjeto(e.target.value)}
+            >
+              <option value="" disabled>Selecione um Objeto Contratual...</option>
+              {objetosContratuais.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
             {objetosContratuais.length === 0 && <p className="empty-state-sm">Nenhum objeto cadastrado ainda.</p>}
           </div>
+          {objetoSelecionado && podeExcluir && (
+            <div className="eixo-gerenciar-row">
+              <button type="button" className="eixo-gerenciar-btn eixo-gerenciar-btn--delete" onClick={() => handleRemoveObjeto(objetoSelecionado)}>
+                <Trash2 size={12} /> Excluir este objeto
+              </button>
+            </div>
+          )}
           {podeCriar && (
             <div className="inline-form" style={{ marginTop: 12 }}>
               <input
@@ -473,43 +506,36 @@ export default function EstruturaSustentabilidade() {
           <p className="form-hint form-hint--muted" style={{ marginBottom: 8 }}>
             Aspectos de sustentabilidade do objeto <strong>{objetoSelecionado}</strong>.
           </p>
-          <div className="tag-manage-list">
-            {aspectosDoObjeto.map((ind) => (
-              <div
-                key={ind.id}
-                className="tag-manage-item"
-                style={{ cursor: 'pointer', borderColor: ind.id === aspectoSelecionadoId ? 'var(--primary)' : undefined }}
-                onClick={() => selecionarAspecto(ind.id)}
-              >
-                <span style={{ fontWeight: ind.id === aspectoSelecionadoId ? 600 : 400 }}>{ind.nome}</span>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {podeEditar && (
-                    <button
-                      type="button"
-                      className="anexo-item-remove"
-                      title="Editar aspecto"
-                      onClick={(e) => { e.stopPropagation(); abrirEditarAspecto(ind); }}
-                    >
-                      <Pencil size={13} />
-                    </button>
-                  )}
-                  {podeExcluir && (
-                    <button
-                      type="button"
-                      className="anexo-item-remove"
-                      title="Excluir aspecto"
-                      onClick={(e) => { e.stopPropagation(); handleRemoveAspecto(ind.id); }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+          <div className="form-group" style={{ maxWidth: 460 }}>
+            <select
+              className="form-input"
+              value={aspectoSelecionadoId ?? ''}
+              onChange={(e) => selecionarAspecto(e.target.value)}
+            >
+              <option value="" disabled>Selecione um Aspecto de Sustentabilidade...</option>
+              {aspectosDoObjeto.map((ind) => (
+                <option key={ind.id} value={ind.id}>{ind.nome}</option>
+              ))}
+            </select>
             {aspectosDoObjeto.length === 0 && !mostrarFormAspecto && (
               <p className="empty-state-sm">Nenhum aspecto de sustentabilidade cadastrado para este objeto ainda.</p>
             )}
           </div>
+
+          {aspectoSelecionado && (podeEditar || podeExcluir) && (
+            <div className="eixo-gerenciar-row">
+              {podeEditar && (
+                <button type="button" className="eixo-gerenciar-btn" onClick={() => abrirEditarAspecto(aspectoSelecionado)}>
+                  <Pencil size={12} /> Editar este aspecto
+                </button>
+              )}
+              {podeExcluir && (
+                <button type="button" className="eixo-gerenciar-btn eixo-gerenciar-btn--delete" onClick={() => handleRemoveAspecto(aspectoSelecionado.id)}>
+                  <Trash2 size={12} /> Excluir este aspecto
+                </button>
+              )}
+            </div>
+          )}
 
           {podeCriar && mostrarFormAspecto ? (
             <div className="inline-form" style={{ marginTop: 12, flexWrap: 'wrap' }}>
@@ -562,7 +588,7 @@ export default function EstruturaSustentabilidade() {
               onChange={(e) => selecionarEixo(e.target.value)}
             >
               <option value="" disabled>Selecione um Eixo PDLS...</option>
-              {eixosPDLS.map((eixo) => {
+              {eixosNomeados.map((eixo) => {
                 const jaCadastrado = indicadoresPDLSDe(aspectoSelecionado.id, eixo.id).length > 0;
                 return (
                   <option key={eixo.id} value={eixo.id}>
@@ -577,7 +603,7 @@ export default function EstruturaSustentabilidade() {
                 Sem vinculação direta ao PDLS{indicadoresPDLSDe(aspectoSelecionado.id, null).length > 0 ? ' (já em uso)' : ''}
               </option>
             </select>
-            {eixosPDLS.length === 0 && <p className="empty-state-sm">Nenhum eixo cadastrado ainda.</p>}
+            {eixosNomeados.length === 0 && <p className="empty-state-sm">Nenhum eixo cadastrado ainda.</p>}
           </div>
 
           {eixoSelecionado && (podeEditar || podeExcluir) && (
@@ -615,18 +641,33 @@ export default function EstruturaSustentabilidade() {
 
           {erroEixo && <p className="form-hint form-hint--danger" style={{ marginTop: 8 }}>{erroEixo}</p>}
           {podeCriar && (
-            <div className="inline-form" style={{ marginTop: 12 }}>
-              <input
-                className="form-input"
-                placeholder="Novo Eixo PDLS — ex: Saúde e Segurança do Trabalho"
-                value={novoEixoPDLS}
-                onChange={(e) => setNovoEixoPDLS(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAddEixo(); }}
-              />
-              <button className="btn-primary" onClick={handleAddEixo}>
-                <Plus size={14} /> Adicionar
-              </button>
-            </div>
+            <>
+              <p className="form-hint form-hint--muted" style={{ marginTop: 12, marginBottom: 4 }}>
+                Número é opcional — deixe em branco pra usar o próximo disponível, ou informe 2, 4 ou 5 pra dar nome a um desses eixos oficiais.
+              </p>
+              <div className="inline-form">
+                <input
+                  className="form-input"
+                  style={{ maxWidth: 70 }}
+                  type="number"
+                  min={1}
+                  placeholder="Nº"
+                  value={novoEixoNumero}
+                  onChange={(e) => setNovoEixoNumero(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddEixo(); }}
+                />
+                <input
+                  className="form-input"
+                  placeholder="Novo Eixo PDLS — ex: Saúde e Segurança do Trabalho"
+                  value={novoEixoPDLS}
+                  onChange={(e) => setNovoEixoPDLS(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddEixo(); }}
+                />
+                <button className="btn-primary" onClick={handleAddEixo}>
+                  <Plus size={14} /> Adicionar
+                </button>
+              </div>
+            </>
           )}
 
           <div className="wizard-nav">
