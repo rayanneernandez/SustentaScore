@@ -552,65 +552,67 @@ export default function EstruturaSustentabilidade() {
         <div className="occurrence-card wizard-card">
           <h3 className="occurrence-section-title">3. Eixo PDLS</h3>
           <p className="form-hint form-hint--muted" style={{ marginBottom: 8 }}>
-            Eixos já com indicador cadastrado para <strong>{aspectoSelecionado.nome}</strong> aparecem marcados; os outros ainda estão disponíveis.
+            Eixos já com indicador cadastrado para <strong>{aspectoSelecionado.nome}</strong> aparecem marcados "(já em uso)"; os outros ainda estão disponíveis.
           </p>
-          <div className="eixo-tabs">
-            {eixosPDLS.map((eixo) => {
-              const jaCadastrado = indicadoresPDLSDe(aspectoSelecionado.id, eixo.id).length > 0;
-              return (
-                <div key={eixo.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  {renomeandoEixoId === eixo.id ? (
-                    <>
-                      <input
-                        className="form-input"
-                        style={{ width: 180 }}
-                        value={nomeEixoEditado}
-                        onChange={(e) => setNomeEixoEditado(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') salvarRenomeEixo(); }}
-                        autoFocus
-                      />
-                      <button type="button" className="anexo-item-remove" title="Salvar nome" onClick={salvarRenomeEixo}>
-                        <Check size={13} />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className={`eixo-tab ${eixo.id === eixoSelecionadoId ? 'eixo-tab--active' : ''} ${jaCadastrado ? 'eixo-tab--cadastrado' : ''}`}
-                        onClick={() => selecionarEixo(eixo.id)}
-                      >
-                        Eixo {eixo.numero} – {eixo.nome}
-                      </button>
-                      {podeEditar && (
-                        <button type="button" className="anexo-item-remove" title="Renomear eixo" onClick={() => iniciarRenomeEixo(eixo.id, eixo.nome)}>
-                          <Pencil size={12} />
-                        </button>
-                      )}
-                      {podeExcluir && (
-                        <button type="button" className="anexo-item-remove" title="Excluir eixo" onClick={() => handleRemoveEixo(eixo.id)}>
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              );
-            })}
-            {eixosPDLS.length === 0 && <p className="empty-state-sm">Nenhum eixo cadastrado ainda.</p>}
 
-            {/* Pseudo-tab pra indicadores sem vinculação com nenhum Eixo PDLS — não é um
-                Eixo de verdade (não tem lápis/lixeira, não entra em `eixosPDLS`), só uma
-                segunda opção de seleção pro passo 3. Ver comentário em `SEM_VINCULO_PDLS`. */}
-            <button
-              type="button"
-              className={`eixo-tab ${semVinculoSelecionado ? 'eixo-tab--active' : ''} ${indicadoresPDLSDe(aspectoSelecionado.id, null).length > 0 ? 'eixo-tab--cadastrado' : ''}`}
-              onClick={() => selecionarEixo(SEM_VINCULO_PDLS)}
-              title="Para exigências contratuais/legais que não se enquadram em nenhum dos 6 Eixos PDLS"
+          <div className="form-group" style={{ maxWidth: 460 }}>
+            <select
+              className="form-input"
+              value={eixoSelecionadoId ?? ''}
+              onChange={(e) => selecionarEixo(e.target.value)}
             >
-              Sem vinculação direta ao PDLS
-            </button>
+              <option value="" disabled>Selecione um Eixo PDLS...</option>
+              {eixosPDLS.map((eixo) => {
+                const jaCadastrado = indicadoresPDLSDe(aspectoSelecionado.id, eixo.id).length > 0;
+                return (
+                  <option key={eixo.id} value={eixo.id}>
+                    Eixo {eixo.numero} – {eixo.nome}{jaCadastrado ? ' (já em uso)' : ''}
+                  </option>
+                );
+              })}
+              {/* Pseudo-opção pra indicadores sem vinculação com nenhum Eixo PDLS — não é
+                  um Eixo de verdade (não entra em `eixosPDLS`), só uma segunda opção de
+                  seleção pro passo 3. Ver comentário em `SEM_VINCULO_PDLS`. */}
+              <option value={SEM_VINCULO_PDLS}>
+                Sem vinculação direta ao PDLS{indicadoresPDLSDe(aspectoSelecionado.id, null).length > 0 ? ' (já em uso)' : ''}
+              </option>
+            </select>
+            {eixosPDLS.length === 0 && <p className="empty-state-sm">Nenhum eixo cadastrado ainda.</p>}
           </div>
+
+          {eixoSelecionado && (podeEditar || podeExcluir) && (
+            <div className="eixo-gerenciar-row">
+              {renomeandoEixoId === eixoSelecionado.id ? (
+                <>
+                  <input
+                    className="form-input"
+                    style={{ maxWidth: 240 }}
+                    value={nomeEixoEditado}
+                    onChange={(e) => setNomeEixoEditado(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') salvarRenomeEixo(); }}
+                    autoFocus
+                  />
+                  <button type="button" className="btn-secondary btn-secondary--sm" onClick={salvarRenomeEixo}>
+                    <Check size={13} /> Salvar
+                  </button>
+                </>
+              ) : (
+                <>
+                  {podeEditar && (
+                    <button type="button" className="eixo-gerenciar-btn" onClick={() => iniciarRenomeEixo(eixoSelecionado.id, eixoSelecionado.nome)}>
+                      <Pencil size={12} /> Renomear este eixo
+                    </button>
+                  )}
+                  {podeExcluir && (
+                    <button type="button" className="eixo-gerenciar-btn eixo-gerenciar-btn--delete" onClick={() => handleRemoveEixo(eixoSelecionado.id)}>
+                      <Trash2 size={12} /> Excluir este eixo
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {erroEixo && <p className="form-hint form-hint--danger" style={{ marginTop: 8 }}>{erroEixo}</p>}
           {podeCriar && (
             <div className="inline-form" style={{ marginTop: 12 }}>

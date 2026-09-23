@@ -14,12 +14,12 @@ function formatDate(dateStr: string) {
   return `${parseInt(day)} de ${months[parseInt(month) - 1]}. de ${year}`;
 }
 
-function criarFormVazio(eixoPadraoId: string) {
+function criarFormVazio() {
   return {
     fornecedorId: '',
     contratoId: '',
     indicadorId: '',
-    eixoPDLSId: eixoPadraoId,
+    eixoPDLSId: '',
     descricao: '',
     data: '',
     deducao: 25,
@@ -32,7 +32,7 @@ function criarFormVazio(eixoPadraoId: string) {
 export default function Ocorrencias() {
   const {
     fornecedores, contratos, ocorrencias, addOcorrencia, indicadores,
-    eixosPDLS, podeCriar: podeCriarPagina, podeVer,
+    eixosPDLS, indicadoresPDLSDe, podeCriar: podeCriarPagina, podeVer,
   } = useData();
   const podeCriar = podeCriarPagina('ocorrencias');
   const podeVerCadastroPDLS = podeVer('cadastroPdls');
@@ -42,15 +42,22 @@ export default function Ocorrencias() {
   const [filtroEixo, setFiltroEixo] = useState('todos');
   const [expandido, setExpandido] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState(() => criarFormVazio(eixosPDLS[0]?.id ?? ''));
+  const [form, setForm] = useState(() => criarFormVazio());
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [erroArquivo, setErroArquivo] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  const nomeEixo = (id: string) => {
+  const nomeEixo = (id?: string) => {
     const eixo = eixosPDLS.find((e) => e.id === id);
     return eixo ? `Eixo ${eixo.numero} – ${eixo.nome}` : '—';
   };
+
+  /** Os "Eixos PDLS do Aspecto" são só os que têm pelo menos um Indicador de
+   * Desempenho cadastrado pra ele (mesma lógica usada em Aspectos de
+   * Sustentabilidade, ver `eixosDoAspecto` em `Indicadores.tsx`) — nunca os 6
+   * eixos soltos, sem relação com o Aspecto escolhido. */
+  const eixosDoAspecto = (indicadorId: string) =>
+    indicadorId ? eixosPDLS.filter((eixo) => indicadoresPDLSDe(indicadorId, eixo.id).length > 0) : [];
 
   const filtradas = ocorrencias.filter((o) => {
     if (filtroFornecedor !== 'todos' && o.fornecedorId !== filtroFornecedor) return false;
@@ -60,6 +67,7 @@ export default function Ocorrencias() {
   });
 
   const contratosDoFornecedorSelecionado = contratos.filter((c) => c.fornecedorId === form.fornecedorId);
+  const eixosDoAspectoDoForm = eixosDoAspecto(form.indicadorId);
   const contratoSelecionado = contratos.find((c) => c.id === form.contratoId);
   const fiscaisSugeridos = Array.from(
     new Set(
@@ -93,13 +101,14 @@ export default function Ocorrencias() {
 
   const fecharModal = () => {
     setShowModal(false);
-    setForm(criarFormVazio(eixosPDLS[0]?.id ?? ''));
+    setForm(criarFormVazio());
     setArquivos([]);
     setErroArquivo('');
   };
 
   const handleAdd = async () => {
-    if (!form.fornecedorId || !form.descricao || !form.eixoPDLSId) return;
+    if (!form.fornecedorId || !form.descricao) return;
+    if (eixosDoAspectoDoForm.length > 0 && !form.eixoPDLSId) return;
     setSalvando(true);
     const forn = fornecedores.find((f) => f.id === form.fornecedorId);
     const ind = indicadores.find((i) => i.id === form.indicadorId);
@@ -111,7 +120,7 @@ export default function Ocorrencias() {
       contratoId: form.contratoId,
       indicadorId: form.indicadorId,
       indicadorNome: ind?.nome || '',
-      eixoPDLSId: form.eixoPDLSId,
+      eixoPDLSId: form.eixoPDLSId || undefined,
       descricao: form.descricao,
       data: form.data || new Date().toISOString().split('T')[0],
       deducao: form.tipoRegistro === 'treinamento' ? 0 : form.deducao,
@@ -157,9 +166,14 @@ export default function Ocorrencias() {
         </select>
         <select className="filter-select-plain" value={filtroEixo} onChange={(e) => setFiltroEixo(e.target.value)}>
           <option value="todos">Todos os Eixos PDLS</option>
-          {eixosPDLS.map((e) => (
-            <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>
-          ))}
+          {/* Eixos ainda sem nome definitivo ("nome a definir") não aparecem aqui — não
+              fazem sentido como filtro enquanto ninguém usa. Continuam disponíveis pra
+              gerenciar/renomear em Estrutura de Sustentabilidade. */}
+          {eixosPDLS
+            .filter((e) => !e.nome.toLowerCase().includes('a definir'))
+            .map((e) => (
+              <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>
+            ))}
         </select>
         <span className="occurrence-count">{filtradas.length} ocorrência{filtradas.length !== 1 ? 's' : ''}</span>
       </div>
@@ -314,17 +328,30 @@ export default function Ocorrencias() {
             </div>
             <div className="form-group">
               <label className="form-label">Aspecto de Sustentabilidade</label>
-              <select className="form-input" value={form.indicadorId} onChange={(e) => setForm({ ...form, indicadorId: e.target.value })}>
+              <select
+                className="form-input"
+                value={form.indicadorId}
+                onChange={(e) => {
+                  const novoIndicadorId = e.target.value;
+                  const eixos = eixosDoAspecto(novoIndicadorId);
+                  setForm({ ...form, indicadorId: novoIndicadorId, eixoPDLSId: eixos[0]?.id ?? '' });
+                }}
+              >
                 <option value="">Selecione...</option>
                 {indicadores.map((i) => <option key={i.id} value={i.id}>{i.nome}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Eixo PDLS *</label>
-              <select className="form-input" value={form.eixoPDLSId} onChange={(e) => setForm({ ...form, eixoPDLSId: e.target.value })}>
-                {eixosPDLS.length === 0 && <option value="">Nenhum eixo cadastrado</option>}
-                {eixosPDLS.map((e) => <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>)}
-              </select>
+              <label className="form-label">Eixo PDLS{eixosDoAspectoDoForm.length > 0 ? ' *' : ''}</label>
+              {!form.indicadorId ? (
+                <p className="form-hint form-hint--muted">Selecione um Aspecto de Sustentabilidade acima pra ver os Eixos PDLS vinculados a ele.</p>
+              ) : eixosDoAspectoDoForm.length === 0 ? (
+                <p className="form-hint form-hint--muted">Não possui vinculação direta ao PDLS.</p>
+              ) : (
+                <select className="form-input" value={form.eixoPDLSId} onChange={(e) => setForm({ ...form, eixoPDLSId: e.target.value })}>
+                  {eixosDoAspectoDoForm.map((e) => <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>)}
+                </select>
+              )}
               {podeVerCadastroPDLS && (
                 <p className="form-hint form-hint--muted">
                   Precisa de um eixo novo? Cadastre em <Link to="/estrutura-sustentabilidade">Estrutura de Sustentabilidade</Link>.

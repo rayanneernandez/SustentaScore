@@ -7,12 +7,12 @@ import { useData } from '../context/DataContext';
 import type { Indicador, UnidadeMedidaPDLS } from '../types';
 
 const iconMap: Record<string, React.ReactNode> = {
-  recycle: <Recycle size={16} strokeWidth={1.5} />,
-  droplets: <Droplets size={16} strokeWidth={1.5} />,
-  zap: <Zap size={16} strokeWidth={1.5} />,
-  leaf: <Leaf size={16} strokeWidth={1.5} />,
-  wind: <Wind size={16} strokeWidth={1.5} />,
-  users: <Users size={16} strokeWidth={1.5} />,
+  recycle: <Recycle size={18} strokeWidth={1.5} />,
+  droplets: <Droplets size={18} strokeWidth={1.5} />,
+  zap: <Zap size={18} strokeWidth={1.5} />,
+  leaf: <Leaf size={18} strokeWidth={1.5} />,
+  wind: <Wind size={18} strokeWidth={1.5} />,
+  users: <Users size={18} strokeWidth={1.5} />,
 };
 
 const unidadeMedidaLabel: Record<UnidadeMedidaPDLS, string> = {
@@ -109,9 +109,11 @@ export default function Indicadores() {
         <Filter size={14} className="text-muted" />
         <select className="filter-select-plain" value={filtroEixo} onChange={(e) => setFiltroEixo(e.target.value)}>
           <option value="todos">Todos os Eixos PDLS</option>
-          {eixosPDLS.map((e) => (
-            <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>
-          ))}
+          {eixosPDLS
+            .filter((e) => !e.nome.toLowerCase().includes('a definir'))
+            .map((e) => (
+              <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>
+            ))}
           <option value="sem-vinculo">Sem vinculação direta ao PDLS</option>
         </select>
         <select className="filter-select-plain" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
@@ -136,22 +138,23 @@ export default function Indicadores() {
                 <div className="indicator-card-badges">
                   <span className="badge badge--outline">{ind.tipo}</span>
                   {totalIndicadores === 0 ? (
-                    <span className="badge badge--outline">Sem Eixo PDLS cadastrado</span>
+                    <span className="badge badge--gray">Sem Eixo PDLS cadastrado</span>
                   ) : (
                     <>
                       {eixos.length > 0 && (
-                        <span className="badge badge--outline">{eixos.length} Eixo{eixos.length !== 1 ? 's' : ''} PDLS</span>
+                        <span className="badge badge--green">{eixos.length} Eixo{eixos.length !== 1 ? 's' : ''} PDLS</span>
                       )}
-                      {semVinculo.length > 0 && <span className="badge badge--outline">Sem vinculação ao PDLS</span>}
+                      {semVinculo.length > 0 && <span className="badge badge--gray">Sem vinculação ao PDLS</span>}
                     </>
                   )}
                 </div>
               </div>
               <div className="indicator-card-heading" style={{ marginBottom: 0 }}>
                 <div className="indicator-card-icon">
-                  {iconMap[ind.icone] || <Leaf size={16} />}
+                  {iconMap[ind.icone] || <Leaf size={18} strokeWidth={1.5} />}
                 </div>
                 <h3 className="indicator-card-name">{ind.nome}</h3>
+                <ArrowRight size={15} className="indicator-card-arrow" />
               </div>
             </div>
           );

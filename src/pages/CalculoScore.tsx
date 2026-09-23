@@ -8,6 +8,21 @@ function getFaixa(score: number): { label: string; color: string; pct: string } 
   return { label: 'Zona Preta', color: '#1F2937', pct: '90% do pagamento + sanções' };
 }
 
+const MESES_ABREV: Record<string, number> = {
+  jan: 0, fev: 1, mar: 2, abr: 3, mai: 4, jun: 5,
+  jul: 6, ago: 7, set: 8, out: 9, nov: 10, dez: 11,
+};
+
+// Transforma "ago/26" em um número comparável (ano*12+mês) pra dar pra ordenar
+// os períodos corretamente — comparar as strings direto não funciona (ex:
+// "jan/27" viria antes de "dez/26" numa comparação alfabética).
+function periodoParaChave(periodo: string): number {
+  const [mesStr, anoStr] = periodo.toLowerCase().split('/');
+  const mes = MESES_ABREV[mesStr] ?? 0;
+  const ano = Number(anoStr);
+  return (Number.isFinite(ano) ? ano : 0) * 12 + mes;
+}
+
 export default function CalculoScore() {
   const { contratos: todosContratos, medicoes } = useData();
 
@@ -21,7 +36,7 @@ export default function CalculoScore() {
   // específico sem o usuário ter escolhido nada — a usuária achou isso confuso.
   const [unidadeSel, setUnidadeSel] = useState('Todos');
   const [contratoSel, setContratoSel] = useState('');
-  const [periodoSel, setPeriodoSel] = useState('Mar/2024');
+  const [periodoSel, setPeriodoSel] = useState('');
 
   const opcoesUnidade = useMemo(
     () => ['Todos', ...new Set(todosContratos.map((c) => c.unidade).filter(Boolean) as string[])],
@@ -47,6 +62,33 @@ export default function CalculoScore() {
 
   const contrato = todosContratos.find((c) => c.id === contratoSel);
 
+  const historico = useMemo(
+    () => (contrato ? medicoes.filter((m) => m.contratoId === contrato.id) : []),
+    [contrato, medicoes],
+  );
+
+  // Ordenado do mês mais antigo pro mais recente — é como o Histórico Mensal é
+  // exibido. O seletor de período usa a ordem inversa (mês mais recente primeiro)
+  // e também define o padrão selecionado ao trocar de contrato.
+  const historicoAsc = useMemo(
+    () => [...historico].sort((a, b) => periodoParaChave(a.periodo) - periodoParaChave(b.periodo)),
+    [historico],
+  );
+
+  const opcoesPeriodo = useMemo(
+    () => [...historicoAsc].reverse().map((m) => m.periodo),
+    [historicoAsc],
+  );
+
+  // Se o contrato mudou (ou o período escolhido não existe mais no histórico dele),
+  // volta pro mês mais recente disponível — nunca fica um período "fantasma" que
+  // não está na lista.
+  useEffect(() => {
+    if (!opcoesPeriodo.includes(periodoSel)) {
+      setPeriodoSel(opcoesPeriodo[0] ?? '');
+    }
+  }, [opcoesPeriodo, periodoSel]);
+
   if (todosContratos.length === 0) {
     return (
       <div className="page">
@@ -66,18 +108,15 @@ export default function CalculoScore() {
   // A partir daqui, tudo é opcional (`?.`/`??`) porque `contrato` pode ser `undefined`
   // — o usuário ainda não escolheu nenhum no seletor. O bloco de score só é
   // renderizado quando `contrato` existe (ver `{contrato ? ... : ...}` mais abaixo).
-  const medicao = contrato
-    ? medicoes.find((m) => m.contratoId === contrato.id && m.periodo === periodoSel)
-      ?? medicoes.find((m) => m.contratoId === contrato.id)
-    : undefined;
+  // O score exibido é sempre o do período escolhido no seletor — nunca cai por
+  // baixo dos panos pra outro mês do contrato.
+  const medicao = periodoSel ? historico.find((m) => m.periodo === periodoSel) : undefined;
 
   const score = medicao?.score ?? contrato?.score ?? 0;
   const ocorrenciasQtd = medicao?.ocorrencias ?? 0;
   const deducaoTotal = ocorrenciasQtd * 25;
   const pagamentoPct = medicao?.pagamento ?? contrato?.pagamento ?? 0;
   const faixa = getFaixa(score);
-
-  const historico = contrato ? medicoes.filter((m) => m.contratoId === contrato.id) : [];
 
   const donutData = [
     { value: score, color: faixa.color },
@@ -123,10 +162,15 @@ export default function CalculoScore() {
           className="score-selector"
           value={periodoSel}
           onChange={(e) => setPeriodoSel(e.target.value)}
+          disabled={opcoesPeriodo.length === 0}
         >
-          {['Mar/2024', 'Fev/2024', 'Jan/2024'].map((p) => (
-            <option key={p} value={p}>{p}</option>
-          ))}
+          {opcoesPeriodo.length === 0 ? (
+            <option value="">Sem histórico</option>
+          ) : (
+            opcoesPeriodo.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))
+          )}
         </select>
       </div>
 
@@ -203,7 +247,7 @@ export default function CalculoScore() {
           {/* Histórico */}
           <div className="score-history">
             <h4 className="score-history-title">Histórico Mensal</h4>
-            {historico.map((m) => (
+            {historicoAsc.map((m) => (
               <div key={m.id} className="score-history-row">
                 <div className="history-period">{m.periodo}</div>
                 <div className="history-meta">Score: {m.score} · {m.pagamento}% do pagamento · {m.ocorrencias} ocorrência{m.ocorrencias !== 1 ? 's' : ''}</div>

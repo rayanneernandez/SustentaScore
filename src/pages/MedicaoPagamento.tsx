@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileSpreadsheet, FileText, CheckCircle } from 'lucide-react';
+import { FileSpreadsheet, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useData } from '../context/DataContext';
@@ -286,10 +286,6 @@ export default function MedicaoPagamento() {
                 <div className="history-item-meta">
                   Score: {m.score} · {m.pagamento}% do pagamento · {m.ocorrencias} ocorrência{m.ocorrencias !== 1 ? 's' : ''}
                 </div>
-              </div>
-              <div className={`history-item-status history-item-status--${m.status}`}>
-                {m.status === 'liberado' && <CheckCircle size={14} />}
-                {labelStatus(m.status)}
               </div>
             </div>
           ))}

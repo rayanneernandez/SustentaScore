@@ -167,8 +167,14 @@ export interface Ocorrencia {
    * ausência normalmente (`indicadorNome || '—'`). */
   indicadorId?: string;
   indicadorNome?: string;
-  /** Eixo PDLS (1 a 6) ao qual esta ocorrência está atrelada. */
-  eixoPDLSId: string;
+  /**
+   * Eixo PDLS (1 a 6) ao qual esta ocorrência está atrelada. Opcional pelo mesmo
+   * motivo do `IndicadorPDLS.eixoId`: o Aspecto de Sustentabilidade escolhido pode
+   * não ter nenhum Eixo PDLS vinculado (ver `indicadoresPDLSDe` no `DataContext`)
+   * — nesse caso fica `undefined`, e a tela mostra "Não possui vinculação direta
+   * ao PDLS" em vez de deixar escolher um eixo qualquer.
+   */
+  eixoPDLSId?: string;
   descricao: string;
   data: string;
   deducao: number;

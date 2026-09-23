@@ -431,14 +431,16 @@ export default function Dashboard() {
   // descumprido metas.
   const ocorrenciasAgrupadas = useMemo(() => {
     const totais = ocorrenciasFiltradas.reduce<Record<string, number>>((acc, item) => {
-      acc[item.eixoPDLSId] = (acc[item.eixoPDLSId] ?? 0) + 1;
+      const chave = item.eixoPDLSId ?? 'sem-vinculo';
+      acc[chave] = (acc[chave] ?? 0) + 1;
       return acc;
     }, {});
 
     const agrupadas = Object.entries(totais)
       .map(([eixoId, total]) => {
         const eixo = eixosPDLS.find((e) => e.id === eixoId);
-        return { tipo: eixo ? `Eixo ${eixo.numero}` : 'Outro', total };
+        const tipo = eixo ? `Eixo ${eixo.numero}` : eixoId === 'sem-vinculo' ? 'Sem vínculo PDLS' : 'Outro';
+        return { tipo, total };
       })
       .sort((a, b) => b.total - a.total);
 
