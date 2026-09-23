@@ -102,6 +102,17 @@
   color: var(--text);
 }
 
+/* O modal, no escuro, ficava quase preto (herdava --bg-card, bem próximo do
+ * --bg da própria página) e sem contorno, então "sumia" contra o overlay
+ * atrás dele — reportado pela usuária como "muito grotesco". Aqui ele ganha
+ * um cinza deliberadamente mais claro que o resto da UI (só pro modal, não
+ * mexe em --bg-card global) mais uma borda sutil, pra ficar claro que é uma
+ * camada elevada por cima do resto da tela. */
+:root[data-theme="dark"] .modal {
+  background: #2B2E33;
+  border: 1px solid var(--border);
+}
+
 html, body, #root {
   height: 100%;
   font-family: 'Inter', system-ui, sans-serif;

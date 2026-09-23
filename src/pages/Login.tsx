@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Leaf, LogIn, Eye, EyeOff, Mail, Lock, Send, Loader2, Check } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import loginVisual from '../assets/login-visual.png';
@@ -7,6 +8,7 @@ type Aba = 'senha' | 'codigo';
 
 export default function Login() {
   const { login } = useData();
+  const navigate = useNavigate();
   const [aba, setAba] = useState<Aba>('senha');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -38,6 +40,13 @@ export default function Login() {
     }
     const ok = login(email, senha, manterConectado);
     setErro(ok ? '' : 'E-mail ou senha incorretos.');
+    // Sempre cai no Monitoramento e Painel Gerencial ("/") ao logar — sem isso,
+    // se a URL na hora do login era de outra tela (ex: um link direto, ou a
+    // aba que já estava aberta numa página quando a sessão expirou), o app
+    // renderiza direto aquela tela em vez do painel principal, porque o
+    // gate de autenticação em App.tsx só troca o que é mostrado, nunca a
+    // URL — pedido explícito da usuária: sempre entrar pelo painel gerencial.
+    if (ok) navigate('/', { replace: true });
   };
 
   return (
