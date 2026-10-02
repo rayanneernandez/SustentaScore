@@ -19,10 +19,14 @@ import { useData } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
 import type { PaginaKey } from '../types';
 
+// Estrutura de Sustentabilidade vem antes de Aspectos de Sustentabilidade —
+// pedido da usuária: depois de escolher o Objeto Contratual, só os eixos
+// daquele objeto ficam disponíveis, então faz mais sentido estruturar
+// primeiro e só depois detalhar os aspectos, evitando poluir o fluxo.
 const navOperacional: { to: string; label: string; icon: typeof Users; num: number; pagina: PaginaKey }[] = [
   { to: '/cadastro', label: 'Fornecedores', icon: Users, num: 1, pagina: 'cadastro' },
-  { to: '/indicadores', label: 'Aspectos de Sustentabilidade', icon: Leaf, num: 2, pagina: 'indicadores' },
-  { to: '/estrutura-sustentabilidade', label: 'Estrutura de Sustentabilidade', icon: Layers, num: 3, pagina: 'cadastroPdls' },
+  { to: '/estrutura-sustentabilidade', label: 'Estrutura de Sustentabilidade', icon: Layers, num: 2, pagina: 'cadastroPdls' },
+  { to: '/indicadores', label: 'Aspectos de Sustentabilidade', icon: Leaf, num: 3, pagina: 'indicadores' },
   { to: '/ocorrencias', label: 'Registro de Ocorrências', icon: AlertTriangle, num: 4, pagina: 'ocorrencias' },
   { to: '/score', label: 'Cálculo do Score', icon: Calculator, num: 5, pagina: 'score' },
   { to: '/medicao', label: 'Medição e Pagamento', icon: ClipboardList, num: 6, pagina: 'medicao' },
@@ -45,7 +49,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
         </div>
         <div>
           <div className="sidebar-logo-title">SustentaScore</div>
-          <div className="sidebar-logo-sub">Avaliação de Fornecedores</div>
+          <div className="sidebar-logo-sub">Avaliação da Sustentabilidade dos Fornecedores</div>
         </div>
         <button className="sidebar-close-btn" onClick={onClose} aria-label="Fechar menu">
           <X size={18} />

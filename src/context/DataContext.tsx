@@ -4,7 +4,8 @@ import {
   dbMedicoes, dbNotificacoesLidas, dbObjetosContratuais, dbOcorrencias,
   dbPerfis, dbScoreHistorico, dbUsuarios,
 } from '../lib/db';
-import { supabaseConfigurado } from '../lib/supabaseClient';
+import { supabase, supabaseConfigurado } from '../lib/supabaseClient';
+import { calcularScoreMesAtual, prepararMedicaoMesAtual } from '../utils/score';
 import { PERFIS_PADRAO, PERFIL_ADMIN_ID, PERFIL_COLABORADOR_ID } from '../config/sistema';
 import type {
   Contrato,
@@ -145,6 +146,47 @@ async function carregarDoSupabase(): Promise<DadosCarregados> {
 }
 
 /**
+ * Garante que o score/faixa/pagamento de cada contrato ATIVO reflita as
+ * Ocorrências do mês corrente assim que os dados carregam — cobre tanto o caso
+ * de "virou o mês e ninguém registrou nada ainda, o score precisa voltar pra
+ * 500" quanto o de um contrato cujo score ainda não refletia Ocorrências já
+ * registradas antes dessa funcionalidade existir (pedido explícito da
+ * usuária: ocorrências com dedução têm que descontar do score do contrato).
+ * Contratos inativos nunca são tocados aqui — o score deles fica congelado
+ * como histórico (ver comentários em `scoreFornecedor` e nas telas de Score).
+ * Só grava no Supabase os contratos cujo valor realmente mudou.
+ */
+function reconciliarScoresDoMes(carregados: DadosCarregados): DadosCarregados {
+  let medicoes = carregados.medicoes;
+
+  const contratos = carregados.contratos.map((c) => {
+    if (c.status !== 'ativo') return c;
+    const resultado = calcularScoreMesAtual(c.id, carregados.ocorrencias);
+
+    const preparada = prepararMedicaoMesAtual(c.id, resultado, medicoes);
+    if (preparada?.nova && preparada.medicaoCompleta) {
+      const novaMedicao = preparada.medicaoCompleta;
+      medicoes = [...medicoes, novaMedicao];
+      sincronizar(dbMedicoes.inserir(novaMedicao), `criar medição do mês do contrato ${c.id}`);
+    } else if (preparada && !preparada.nova && preparada.patch) {
+      const idMedicao = preparada.id;
+      const patchMedicao = preparada.patch;
+      medicoes = medicoes.map((m) => (m.id === idMedicao ? { ...m, ...patchMedicao } : m));
+      sincronizar(dbMedicoes.atualizar(idMedicao, patchMedicao), `atualizar medição do mês do contrato ${c.id}`);
+    }
+
+    if (c.score === resultado.score && c.faixa === resultado.faixa && c.pagamento === resultado.pagamento) return c;
+    sincronizar(
+      dbContratos.atualizar(c.id, { score: resultado.score, faixa: resultado.faixa, pagamento: resultado.pagamento }),
+      `recalcular score do mês do contrato ${c.id}`,
+    );
+    return { ...c, score: resultado.score, faixa: resultado.faixa, pagamento: resultado.pagamento };
+  });
+
+  return { ...carregados, contratos, medicoes };
+}
+
+/**
  * Gera notificações a partir da vigência dos contratos. Esta é hoje a única
  * origem de notificações, mas `notificacoes` (no contexto) foi desenhado para
  * agregar outras origens no futuro (ocorrências, quedas de score, medições
@@ -245,6 +287,16 @@ interface DataContextValue {
   /** `manterConectado`: true grava a sessão no localStorage (sobrevive a fechar o
    * navegador), false grava no sessionStorage (encerra ao fechar a aba/navegador). */
   login: (email: string, senha: string, manterConectado: boolean) => boolean;
+  /** Login por código de e-mail — passo 1: envia um código de 6 dígitos pro
+   * e-mail informado via Supabase Auth (OTP). Só funciona pra e-mail já
+   * cadastrado em Usuários (não cria usuário novo, nem no Supabase Auth nem
+   * no sistema) — por isso o retorno distingue "e-mail não encontrado" de
+   * falha no envio. */
+  enviarCodigoLogin: (email: string) => Promise<{ ok: boolean; erro?: string }>;
+  /** Login por código de e-mail — passo 2: confere o código digitado contra
+   * o que o Supabase mandou; se bater, loga o usuário correspondente (mesmo
+   * fluxo de sessão do `login` por senha). */
+  confirmarCodigoLogin: (email: string, codigo: string, manterConectado: boolean) => Promise<{ ok: boolean; erro?: string }>;
   logout: () => void;
   addUsuario: (u: Usuario) => void;
   /** Edita nome/cargo/e-mail/senha/perfil de um usuário existente. */
@@ -297,7 +349,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     let cancelado = false;
     carregarDoSupabase()
       .then((carregados) => {
-        if (!cancelado) setDados(carregados);
+        if (!cancelado) setDados(reconciliarScoresDoMes(carregados));
       })
       .catch((erro: Error) => {
         if (!cancelado) setErroCarregamento(erro.message);
@@ -413,6 +465,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const addOcorrencia = (o: Ocorrencia) => {
     setDados((prev) => (prev ? { ...prev, ocorrencias: [o, ...prev.ocorrencias] } : prev));
     sincronizar(dbOcorrencias.inserir(o), `nova ocorrência ${o.id}`);
+
+    // Toda Ocorrência "com dedução" desconta na hora o score do mês corrente do
+    // contrato — o score reinicia em 500 todo mês (pedido explícito da usuária,
+    // ver `calcularScoreMesAtual`). Ocorrências do tipo 'treinamento' nunca
+    // descontam, mas mesmo assim recalculamos pra manter tudo consistente caso
+    // o contador de ocorrências do mês volte a ser exibido em algum lugar.
+    const ocorrenciasAtualizadas = [o, ...(dados?.ocorrencias ?? [])];
+    const resultado = calcularScoreMesAtual(o.contratoId, ocorrenciasAtualizadas);
+
+    // A Medição do mês corrente também é criada/atualizada na hora — pedido
+    // explícito da usuária: o histórico precisa ficar registrado de verdade,
+    // não só calculado pra exibir (ver `prepararMedicaoMesAtual`).
+    const preparada = prepararMedicaoMesAtual(o.contratoId, resultado, dados?.medicoes ?? []);
+    if (preparada?.nova && preparada.medicaoCompleta) {
+      const novaMedicao = preparada.medicaoCompleta;
+      setDados((prev) => (prev ? { ...prev, medicoes: [...prev.medicoes, novaMedicao] } : prev));
+      sincronizar(dbMedicoes.inserir(novaMedicao), `criar medição do mês do contrato ${o.contratoId}`);
+    } else if (preparada && !preparada.nova && preparada.patch) {
+      const idMedicao = preparada.id;
+      const patchMedicao = preparada.patch;
+      setDados((prev) =>
+        prev ? { ...prev, medicoes: prev.medicoes.map((m) => (m.id === idMedicao ? { ...m, ...patchMedicao } : m)) } : prev,
+      );
+      sincronizar(dbMedicoes.atualizar(idMedicao, patchMedicao), `atualizar medição do mês do contrato ${o.contratoId}`);
+    }
+
+    updateContrato(
+      o.contratoId,
+      { score: resultado.score, faixa: resultado.faixa, pagamento: resultado.pagamento },
+      o.tipoRegistro === 'treinamento'
+        ? undefined
+        : {
+            tipo: 'ocorrencia',
+            descricao: `Nova ocorrência registrada: -${o.deducao} ponto${o.deducao === 1 ? '' : 's'}. Score do mês atualizado para ${resultado.score} (dedução total do mês: -${resultado.deducaoTotal}).`,
+          },
+    );
   };
 
   // ── Aspectos de Sustentabilidade (Indicador) ──────────────────
@@ -518,11 +606,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // ── Usuários e sessão ──────────────────────────────────────────
   const usuarioAtual = dados?.usuarios.find((u) => u.id === usuarioAtualId) ?? null;
 
-  const login = (email: string, senha: string, manterConectado: boolean): boolean => {
-    const encontrado = dados?.usuarios.find(
-      (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.senha === senha,
-    );
-    if (!encontrado) return false;
+  /** Grava a sessão (usuarioAtualId + local/sessionStorage) depois que as
+   * credenciais — senha ou código por e-mail — já foram conferidas. Reaproveitado
+   * pelos dois fluxos de login pra não duplicar a lógica de sessão. */
+  const concluirLogin = (encontrado: Usuario, manterConectado: boolean) => {
     setUsuarioAtualId(encontrado.id);
     // Só um dos dois guarda a sessão — limpa o outro pra não ficar um resquício
     // de uma escolha anterior de "manter conectado" fazendo a sessão persistir
@@ -535,7 +622,56 @@ export function DataProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(CHAVE_SESSAO);
     }
     setModoVisualizacao(null);
+  };
+
+  const login = (email: string, senha: string, manterConectado: boolean): boolean => {
+    const encontrado = dados?.usuarios.find(
+      (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.senha === senha,
+    );
+    if (!encontrado) return false;
+    concluirLogin(encontrado, manterConectado);
     return true;
+  };
+
+  const enviarCodigoLogin = async (email: string): Promise<{ ok: boolean; erro?: string }> => {
+    const emailLimpo = email.trim().toLowerCase();
+    const encontrado = dados?.usuarios.find((u) => u.email.toLowerCase() === emailLimpo);
+    if (!encontrado) {
+      return { ok: false, erro: 'Esse e-mail não está cadastrado no sistema.' };
+    }
+    // `shouldCreateUser: false` impede que um e-mail qualquer (mesmo sem conta
+    // aqui) crie um usuário novo no Supabase Auth só por tentar o login —
+    // login por código só vale pra quem já está cadastrado em Usuários.
+    const { error } = await supabase.auth.signInWithOtp({
+      email: emailLimpo,
+      options: { shouldCreateUser: false },
+    });
+    if (error) {
+      return { ok: false, erro: 'Não foi possível enviar o código agora. Tente novamente em instantes.' };
+    }
+    return { ok: true };
+  };
+
+  const confirmarCodigoLogin = async (
+    email: string,
+    codigo: string,
+    manterConectado: boolean,
+  ): Promise<{ ok: boolean; erro?: string }> => {
+    const emailLimpo = email.trim().toLowerCase();
+    const { error } = await supabase.auth.verifyOtp({ email: emailLimpo, token: codigo.trim(), type: 'email' });
+    if (error) {
+      return { ok: false, erro: 'Código inválido ou expirado.' };
+    }
+    // O app tem sua própria sessão (usuarioAtualId + local/sessionStorage) —
+    // a sessão do Supabase Auth só serviu pra conferir o código, não
+    // precisamos dela depois disso.
+    await supabase.auth.signOut();
+    const encontrado = dados?.usuarios.find((u) => u.email.toLowerCase() === emailLimpo);
+    if (!encontrado) {
+      return { ok: false, erro: 'Esse e-mail não está cadastrado no sistema.' };
+    }
+    concluirLogin(encontrado, manterConectado);
+    return { ok: true };
   };
 
   const logout = () => {
@@ -671,6 +807,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       usuarios: dados.usuarios,
       usuarioAtual,
       login,
+      enviarCodigoLogin,
+      confirmarCodigoLogin,
       logout,
       addUsuario,
       updateUsuario,

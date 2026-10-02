@@ -1855,6 +1855,16 @@ html, body, #root {
   margin-top: 2px;
 }
 
+/* Telefone/endereço do fornecedor — informação geral da empresa, por isso
+ * fica no cabeçalho do card junto do CNPJ, e não escondida dentro do painel
+ * expandido (que agora é só sobre os contratos). */
+.supplier-card-contato {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
 .supplier-card-score {
   text-align: right;
 }
@@ -3423,17 +3433,21 @@ html, body, #root {
   display: flex;
   justify-content: flex-end;
   padding: 14px 32px 0;
-  background: var(--bg-card);
+  /* Sem fundo próprio — fica transparente, deixando aparecer a cor de fundo da
+   * própria tela (`.main-content` usa `var(--bg)`) em vez de uma faixa branca
+   * separada. No Dashboard o sino já fica dentro do cabeçalho da própria página; nas
+   * demais telas ele flutua aqui, sem nenhuma faixa branca por trás. */
+  background: transparent;
 }
 
-/* No Dashboard (telas ≥901px), a faixa superior não tem nenhum conteúdo visível — o
- * sino já está dentro do cabeçalho da própria página — então fica sem padding, pra o
- * cabeçalho "Monitoramento de Desempenho..." ficar colado no topo, sem espaço vazio
- * acima. Só se aplica em desktop: em mobile o botão de abrir o menu lateral precisa
- * do padding normal (ver override de `.topbar` dentro de `@media (max-width: 768px)`
- * e o `@media (max-width: 900px)` que mostra `.topbar-menu-btn`). */
+/* Em telas de desktop (≥901px) a faixa superior não ocupa espaço extra nenhum — só
+ * o necessário pro sino (nas telas que o mostram aqui), sem padding, pro conteúdo da
+ * página (ou o cabeçalho do Dashboard) ficar colado no topo. Só se aplica em desktop:
+ * em mobile o botão de abrir o menu lateral precisa do padding normal (ver override
+ * de `.topbar` dentro de `@media (max-width: 768px)` e o `@media (max-width: 900px)`
+ * que mostra `.topbar-menu-btn`). */
 @media (min-width: 901px) {
-  .topbar--dashboard {
+  .topbar {
     padding: 0;
   }
 }

@@ -4,6 +4,7 @@ import { Plus, Trash2, Pencil, Check, ChevronLeft, ChevronRight, ClipboardCheck,
 import { useData } from '../context/DataContext';
 import type { Indicador, IndicadorPDLS, UnidadeMedidaPDLS, Anexo } from '../types';
 import { TAMANHO_MAX_ANEXO, MAX_ANEXOS_POR_ENVIO, arquivosParaAnexos } from '../utils/anexos';
+import { capitalizarPalavras } from '../utils/texto';
 
 const unidadeMedidaLabel: Record<UnidadeMedidaPDLS, string> = {
   percentual: 'Percentual',
@@ -405,12 +406,12 @@ export default function EstruturaSustentabilidade() {
   // Rótulo da seleção já feita em cada passo, mostrado embaixo do nome do passo
   // na barra — é o que substitui a antiga "trilha" (breadcrumb) separada.
   const valorDoPasso = [
-    objetoSelecionado || null,
-    aspectoSelecionado?.nome ?? null,
+    objetoSelecionado ? capitalizarPalavras(objetoSelecionado) : null,
+    aspectoSelecionado ? capitalizarPalavras(aspectoSelecionado.nome) : null,
     semVinculoSelecionado
       ? 'Sem vinculação ao PDLS'
-      : eixoSelecionado ? `Eixo ${eixoSelecionado.numero} – ${eixoSelecionado.nome}` : null,
-    pdlsSelecionado?.nome ?? null,
+      : eixoSelecionado ? `Eixo ${eixoSelecionado.numero} – ${capitalizarPalavras(eixoSelecionado.nome)}` : null,
+    pdlsSelecionado ? capitalizarPalavras(pdlsSelecionado.nome) : null,
     null,
   ];
 
@@ -464,7 +465,7 @@ export default function EstruturaSustentabilidade() {
             >
               <option value="" disabled>Selecione um Objeto Contratual...</option>
               {objetosContratuais.map((o) => (
-                <option key={o} value={o}>{o}</option>
+                <option key={o} value={o}>{capitalizarPalavras(o)}</option>
               ))}
             </select>
             {objetosContratuais.length === 0 && <p className="empty-state-sm">Nenhum objeto cadastrado ainda.</p>}
@@ -504,7 +505,7 @@ export default function EstruturaSustentabilidade() {
         <div className="occurrence-card wizard-card">
           <h3 className="occurrence-section-title">2. Aspecto de Sustentabilidade</h3>
           <p className="form-hint form-hint--muted" style={{ marginBottom: 8 }}>
-            Aspectos de sustentabilidade do objeto <strong>{objetoSelecionado}</strong>.
+            Aspectos de sustentabilidade do objeto <strong>{capitalizarPalavras(objetoSelecionado)}</strong>.
           </p>
           <div className="form-group" style={{ maxWidth: 460 }}>
             <select
@@ -514,7 +515,7 @@ export default function EstruturaSustentabilidade() {
             >
               <option value="" disabled>Selecione um Aspecto de Sustentabilidade...</option>
               {aspectosDoObjeto.map((ind) => (
-                <option key={ind.id} value={ind.id}>{ind.nome}</option>
+                <option key={ind.id} value={ind.id}>{capitalizarPalavras(ind.nome)}</option>
               ))}
             </select>
             {aspectosDoObjeto.length === 0 && !mostrarFormAspecto && (
@@ -578,7 +579,7 @@ export default function EstruturaSustentabilidade() {
         <div className="occurrence-card wizard-card">
           <h3 className="occurrence-section-title">3. Eixo PDLS</h3>
           <p className="form-hint form-hint--muted" style={{ marginBottom: 8 }}>
-            Eixos já com indicador cadastrado para <strong>{aspectoSelecionado.nome}</strong> aparecem marcados "(já em uso)"; os outros ainda estão disponíveis.
+            Eixos já com indicador cadastrado para <strong>{capitalizarPalavras(aspectoSelecionado.nome)}</strong> aparecem marcados "(já em uso)"; os outros ainda estão disponíveis.
           </p>
 
           <div className="form-group" style={{ maxWidth: 460 }}>
@@ -592,7 +593,7 @@ export default function EstruturaSustentabilidade() {
                 const jaCadastrado = indicadoresPDLSDe(aspectoSelecionado.id, eixo.id).length > 0;
                 return (
                   <option key={eixo.id} value={eixo.id}>
-                    Eixo {eixo.numero} – {eixo.nome}{jaCadastrado ? ' (já em uso)' : ''}
+                    Eixo {eixo.numero} – {capitalizarPalavras(eixo.nome)}{jaCadastrado ? ' (já em uso)' : ''}
                   </option>
                 );
               })}
@@ -687,9 +688,9 @@ export default function EstruturaSustentabilidade() {
           <h3 className="occurrence-section-title">4. Indicador de Desempenho PDLS</h3>
           <p className="form-hint form-hint--muted" style={{ marginBottom: 8 }}>
             {semVinculoSelecionado ? (
-              <>Indicadores de <strong>{aspectoSelecionado.nome}</strong> sem vinculação direta ao PDLS.</>
+              <>Indicadores de <strong>{capitalizarPalavras(aspectoSelecionado.nome)}</strong> sem vinculação direta ao PDLS.</>
             ) : (
-              <>Indicadores de <strong>{aspectoSelecionado.nome}</strong> no Eixo {eixoSelecionado!.numero} – {eixoSelecionado!.nome}.</>
+              <>Indicadores de <strong>{capitalizarPalavras(aspectoSelecionado.nome)}</strong> no Eixo {eixoSelecionado!.numero} – {capitalizarPalavras(eixoSelecionado!.nome)}.</>
             )}{' '}
             Clique num indicador pra selecioná-lo e (se quiser) adicionar observações no próximo passo.
           </p>
@@ -705,7 +706,7 @@ export default function EstruturaSustentabilidade() {
                 >
                   <div className="pdls-card-top">
                     <span className="pdls-card-nome">
-                      {p.nome}
+                      {capitalizarPalavras(p.nome)}
                       {temObservacao && <Paperclip size={12} style={{ marginLeft: 6, verticalAlign: 'middle', color: 'var(--text-muted)' }} />}
                     </span>
                     {(podeEditar || podeExcluir) && (
@@ -828,7 +829,7 @@ export default function EstruturaSustentabilidade() {
         <div className="occurrence-card wizard-card">
           <h3 className="occurrence-section-title">5. Observações</h3>
           <p className="form-hint form-hint--muted" style={{ marginBottom: 8 }}>
-            Opcional — sobre <strong>{pdlsSelecionado.nome}</strong>. Use pra registrar algo que não
+            Opcional — sobre <strong>{capitalizarPalavras(pdlsSelecionado.nome)}</strong>. Use pra registrar algo que não
             se encaixa nos meios de verificação, ou anexar um documento de apoio.
           </p>
 

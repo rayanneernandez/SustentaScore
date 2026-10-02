@@ -9,7 +9,6 @@ export interface Fornecedor {
   faixa: ScoreFaixa;
   endereco?: string;
   telefone?: string;
-  preposto?: string;
   observacao?: string;
 }
 
@@ -19,7 +18,8 @@ export type HistoricoTipo =
   | 'status'
   | 'prorrogacao'
   | 'anexo'
-  | 'observacao';
+  | 'observacao'
+  | 'ocorrencia';
 
 export interface HistoricoEvento {
   id: string;
@@ -57,6 +57,10 @@ export interface Contrato {
   fiscalSubstituto?: string;
   gestor?: string;
   gestorSubstituto?: string;
+  /** Preposto da empresa contratada responsável por este contrato específico
+   *  — pode mudar de um contrato pra outro do mesmo fornecedor, por isso vive
+   *  aqui e não em Fornecedor. */
+  preposto?: string;
   observacao?: string;
   score: number;
   faixa: ScoreFaixa;

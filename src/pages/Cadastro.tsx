@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import {
   Search, Plus, ChevronRight, ChevronDown, Building2,
-  MapPin, Phone, User, FileText, Pencil, X, Paperclip,
+  MapPin, Phone, FileText, Pencil, X, Paperclip,
   Upload, RefreshCw, Clock, AlertTriangle, CheckCircle2,
   ExternalLink, History, Power, PowerOff, Trash2,
 } from 'lucide-react';
 import { useData, statusVigencia, diasParaVencimento, formatarDataBR, criarEventoHistorico, ALERTA_DIAS_PADRAO } from '../context/DataContext';
 import { TAMANHO_MAX_ANEXO, MAX_ANEXOS_POR_ENVIO, arquivosParaAnexos } from '../utils/anexos';
+import { capitalizarPalavras } from '../utils/texto';
+import { formatarTelefone } from '../utils/telefone';
 import type { Fornecedor, Contrato, HistoricoTipo, Anexo } from '../types';
 
 // ── Modal Novo / Editar Fornecedor ────────────────────────────────
@@ -23,7 +25,6 @@ function ModalFornecedor({
     cnpj: fornecedorParaEditar?.cnpj ?? '',
     endereco: fornecedorParaEditar?.endereco ?? '',
     telefone: fornecedorParaEditar?.telefone ?? '',
-    preposto: fornecedorParaEditar?.preposto ?? '',
     observacao: fornecedorParaEditar?.observacao ?? '',
   });
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
@@ -62,15 +63,11 @@ function ModalFornecedor({
           </div>
           <div className="form-group">
             <label className="form-label">Telefone</label>
-            <input className="form-input" placeholder="(00) 0000-0000" value={form.telefone} onChange={(e) => set('telefone', e.target.value)} />
+            <input className="form-input" placeholder="(00) 0000-0000 — pode informar mais de um, separados por vírgula" value={form.telefone} onChange={(e) => set('telefone', formatarTelefone(e.target.value))} />
           </div>
           <div className="form-group form-group--full">
             <label className="form-label">Endereço</label>
             <input className="form-input" placeholder="Rua, número - Cidade/UF" value={form.endereco} onChange={(e) => set('endereco', e.target.value)} />
-          </div>
-          <div className="form-group form-group--full">
-            <label className="form-label">Nome do Preposto</label>
-            <input className="form-input" placeholder="Responsável pelo contrato" value={form.preposto} onChange={(e) => set('preposto', e.target.value)} />
           </div>
           <div className="form-group form-group--full">
             <label className="form-label">Observações</label>
@@ -93,7 +90,7 @@ const CAMPO_CONTRATO_LABEL: Record<string, string> = {
   vigenciaInicio: 'Vigência Início', vigenciaFim: 'Vigência Fim', tipo: 'Tipo', status: 'Status',
   fiscalTecnico: 'Fiscal Técnico', fiscalAdministrativo: 'Fiscal Administrativo',
   fiscalSubstituto: 'Fiscal Substituto', gestor: 'Gestor', gestorSubstituto: 'Gestor Substituto',
-  observacao: 'Observação',
+  preposto: 'Preposto da Contratada', observacao: 'Observação',
 };
 
 // ── Modal Novo / Editar Contrato ──────────────────────────────────
@@ -126,6 +123,7 @@ function ModalContrato({
     fiscalSubstituto: contratoParaEditar?.fiscalSubstituto ?? '',
     gestor: contratoParaEditar?.gestor ?? '',
     gestorSubstituto: contratoParaEditar?.gestorSubstituto ?? '',
+    preposto: contratoParaEditar?.preposto ?? '',
     observacao: contratoParaEditar?.observacao ?? '',
   };
   const [form, setForm] = useState(valoresIniciais);
@@ -182,6 +180,7 @@ function ModalContrato({
         fiscalSubstituto: form.fiscalSubstituto,
         gestor: form.gestor,
         gestorSubstituto: form.gestorSubstituto,
+        preposto: form.preposto,
         observacao: form.observacao,
       };
       if (camposAlterados.length > 0) {
@@ -231,6 +230,7 @@ function ModalContrato({
       fiscalSubstituto: form.fiscalSubstituto,
       gestor: form.gestor,
       gestorSubstituto: form.gestorSubstituto,
+      preposto: form.preposto,
       observacao: form.observacao,
       score: 500,
       faixa: 'verde',
@@ -275,7 +275,7 @@ function ModalContrato({
             <select className="form-input" value={form.objeto} onChange={(e) => set('objeto', e.target.value)}>
               <option value="">Selecione</option>
               {objetosContratuais.map((o) => (
-                <option key={o} value={o}>{o}</option>
+                <option key={o} value={o}>{capitalizarPalavras(o)}</option>
               ))}
             </select>
             <p className="form-hint form-hint--muted">
@@ -398,6 +398,10 @@ function ModalContrato({
             <label className="form-label">Gestor Substituto</label>
             <input className="form-input" placeholder="Nome do gestor substituto" value={form.gestorSubstituto} onChange={(e) => set('gestorSubstituto', e.target.value)} />
           </div>
+          <div className="form-group form-group--full">
+            <label className="form-label">Preposto da Contratada</label>
+            <input className="form-input" placeholder="Representante da empresa responsável por este contrato" value={form.preposto} onChange={(e) => set('preposto', e.target.value)} />
+          </div>
 
           {/* Observação */}
           <div className="form-group form-group--full">
@@ -451,6 +455,7 @@ const rotuloTipoHistorico: Record<HistoricoTipo, string> = {
   prorrogacao: 'Prorrogação',
   anexo: 'Anexo',
   observacao: 'Observação',
+  ocorrencia: 'Ocorrência',
 };
 
 // ── Modal Detalhe do Contrato ───────────────────────────────────────
@@ -566,7 +571,7 @@ function ModalDetalheContrato({
         <div className="modal-header">
           <div>
             <h2 className="modal-title">{contrato.numero}</h2>
-            <p className="modal-subtitle" style={{ margin: '2px 0 0' }}>{contrato.fornecedorNome} · {contrato.objeto}</p>
+            <p className="modal-subtitle" style={{ margin: '2px 0 0' }}>{contrato.fornecedorNome} · {contrato.objeto ? capitalizarPalavras(contrato.objeto) : contrato.objeto}</p>
           </div>
           <div className="detail-block-row" style={{ flexWrap: 'nowrap' }}>
             {podeEditar && (
@@ -715,9 +720,6 @@ function ModalDetalheContrato({
                   <div className="history-meta">
                     Score: {m.score} · {m.pagamento}% do pagamento · {m.ocorrencias} ocorrência{m.ocorrencias !== 1 ? 's' : ''}
                   </div>
-                  <div className={`history-status history-status--${m.status}`}>
-                    {m.status === 'liberado' ? 'Liberado' : m.status === 'pendente' ? 'Pendente' : 'Bloqueado'}
-                  </div>
                 </div>
               ))}
             </div>
@@ -819,6 +821,20 @@ function FornecedorCard({
               <span className="text-muted"> · {contratosInativos.length} inativo{contratosInativos.length !== 1 ? 's' : ''}</span>
             )}
           </div>
+          {(fornecedor.telefone || fornecedor.endereco) && (
+            <div className="supplier-card-contato">
+              {fornecedor.telefone && (
+                <span className="supplier-info-item">
+                  <Phone size={12} /> {fornecedor.telefone}
+                </span>
+              )}
+              {fornecedor.endereco && (
+                <span className="supplier-info-item">
+                  <MapPin size={12} /> {fornecedor.endereco}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="supplier-card-score">
           <span className="supplier-score-value">{score ?? '—'}</span>
@@ -850,27 +866,6 @@ function FornecedorCard({
               </div>
             )}
           </div>
-
-          {/* Dados do fornecedor */}
-          {(fornecedor.endereco || fornecedor.telefone || fornecedor.preposto) && (
-            <div className="supplier-info-row">
-              {fornecedor.endereco && (
-                <span className="supplier-info-item">
-                  <MapPin size={13} /> {fornecedor.endereco}
-                </span>
-              )}
-              {fornecedor.telefone && (
-                <span className="supplier-info-item">
-                  <Phone size={13} /> {fornecedor.telefone}
-                </span>
-              )}
-              {fornecedor.preposto && (
-                <span className="supplier-info-item">
-                  <User size={13} /> Preposto: {fornecedor.preposto}
-                </span>
-              )}
-            </div>
-          )}
 
           {/* Score por unidade — só faz sentido mostrar quando o fornecedor tem
            * contratos ativos em mais de uma unidade administrativa. */}
@@ -917,7 +912,7 @@ function FornecedorCard({
                     )}
                   </div>
                   <div className="contract-item-meta">
-                    {[c.objeto, c.unidade].filter(Boolean).join(' · ')}
+                    {[c.objeto ? capitalizarPalavras(c.objeto) : null, c.unidade].filter(Boolean).join(' · ')}
                   </div>
                 </div>
                 <BadgeVigencia contrato={c} />

@@ -18,6 +18,9 @@ export default function Layout() {
   const location = useLocation();
   // O Dashboard tem seu próprio cabeçalho com "Última atualização" e posiciona o sino ali
   // ao lado — nesse caso a faixa superior (.topbar) não repete o sino, só o menu mobile.
+  // Nas demais telas a faixa superior fica sem fundo próprio (ver `.topbar` no CSS): em
+  // telas de desktop ela não ocupa espaço nenhum além do sino, que fica flutuando na
+  // cor de fundo da própria tela, sem nenhuma faixa branca separada.
   const naDashboard = location.pathname === '/';
 
   return (
@@ -25,12 +28,13 @@ export default function Layout() {
       <Sidebar open={menuAberto} onClose={() => setMenuAberto(false)} />
       {menuAberto && <div className="sidebar-overlay" onClick={() => setMenuAberto(false)} />}
       <main className={`main-content ${notifAberto ? 'main-content--notif-open' : ''}`}>
-        {/* No Dashboard, o sino já aparece dentro do próprio cabeçalho da página (ao lado
-         * de "Última atualização") — em telas de desktop a faixa superior fica sem nenhum
-         * conteúdo visível ali, então usa a classe `topbar--dashboard` pra não sobrar
-         * espaço vazio acima do cabeçalho. Em mobile ela continua com o padding normal,
-         * porque o botão de abrir o menu lateral precisa desse espaço em qualquer tela. */}
-        <div className={`topbar ${naDashboard ? 'topbar--dashboard' : ''}`}>
+        {/* Em telas de desktop a faixa superior não tem fundo próprio nem padding (ver
+         * `.topbar` no CSS) — só o sino fica visível ali, flutuando na cor de fundo da
+         * tela. No Dashboard o sino já aparece dentro do próprio cabeçalho da página (ao
+         * lado de "Última atualização"), por isso some daqui. Em mobile ela continua com
+         * o padding normal, porque o botão de abrir o menu lateral precisa desse espaço
+         * em qualquer tela. */}
+        <div className="topbar">
           <button className="topbar-menu-btn" onClick={() => setMenuAberto(true)} aria-label="Abrir menu">
             <Menu size={20} />
           </button>

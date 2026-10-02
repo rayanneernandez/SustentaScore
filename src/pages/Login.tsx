@@ -7,7 +7,7 @@ import loginVisual from '../assets/login-visual.png';
 type Aba = 'senha' | 'codigo';
 
 export default function Login() {
-  const { login } = useData();
+  const { login, enviarCodigoLogin, confirmarCodigoLogin } = useData();
   const navigate = useNavigate();
   const [aba, setAba] = useState<Aba>('senha');
   const [email, setEmail] = useState('');
@@ -15,6 +15,14 @@ export default function Login() {
   const [erro, setErro] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [manterConectado, setManterConectado] = useState(true);
+
+  // ── Login por código de e-mail ─────────────────────────────────
+  const [emailCodigo, setEmailCodigo] = useState('');
+  const [etapaCodigo, setEtapaCodigo] = useState<'email' | 'codigo'>('email');
+  const [codigoDigitado, setCodigoDigitado] = useState('');
+  const [erroCodigo, setErroCodigo] = useState('');
+  const [enviandoCodigo, setEnviandoCodigo] = useState(false);
+  const [confirmandoCodigo, setConfirmandoCodigo] = useState(false);
   // 'inicial' -> clica -> 'verificando' (alguns instantes) -> 'verificado'.
   // Clicar de novo já verificado desmarca. Não é um captcha de verdade (não
   // detecta bot nenhum — isso exigiria um serviço externo tipo reCAPTCHA ou
@@ -49,6 +57,42 @@ export default function Login() {
     if (ok) navigate('/', { replace: true });
   };
 
+  const handleEnviarCodigo = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!emailCodigo.trim() || enviandoCodigo) return;
+    setEnviandoCodigo(true);
+    setErroCodigo('');
+    const resultado = await enviarCodigoLogin(emailCodigo);
+    setEnviandoCodigo(false);
+    if (resultado.ok) {
+      setEtapaCodigo('codigo');
+    } else {
+      setErroCodigo(resultado.erro ?? 'Não foi possível enviar o código. Tente novamente.');
+    }
+  };
+
+  const handleConfirmarCodigo = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!codigoDigitado.trim() || confirmandoCodigo) return;
+    setConfirmandoCodigo(true);
+    setErroCodigo('');
+    const resultado = await confirmarCodigoLogin(emailCodigo, codigoDigitado, manterConectado);
+    setConfirmandoCodigo(false);
+    if (resultado.ok) {
+      // Mesmo pedido de sempre cair no Monitoramento e Painel Gerencial — ver
+      // comentário equivalente em `handleSubmit`, acima.
+      navigate('/', { replace: true });
+    } else {
+      setErroCodigo(resultado.erro ?? 'Código inválido ou expirado.');
+    }
+  };
+
+  const voltarParaEmailCodigo = () => {
+    setEtapaCodigo('email');
+    setCodigoDigitado('');
+    setErroCodigo('');
+  };
+
   return (
     <div className="login-page">
       {/* Painel visual com a identidade do SustentaScore — em telas estreitas
@@ -68,7 +112,7 @@ export default function Login() {
             </div>
             <div>
               <div className="login-logo-title">SustentaScore</div>
-              <div className="login-logo-sub">Avaliação de Fornecedores</div>
+              <div className="login-logo-sub">Avaliação da Sustentabilidade dos Fornecedores</div>
             </div>
           </div>
 
@@ -107,7 +151,7 @@ export default function Login() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="nome@sustentascore.br"
+                    placeholder="nome@gmail.com"
                     autoFocus
                     required
                   />
@@ -169,8 +213,8 @@ export default function Login() {
                 <LogIn size={16} /> Entrar
               </button>
             </form>
-          ) : (
-            <form className="login-form" onSubmit={(e) => e.preventDefault()}>
+          ) : etapaCodigo === 'email' ? (
+            <form className="login-form" onSubmit={handleEnviarCodigo}>
               <div className="form-group form-group--full">
                 <label className="form-label">E-mail corporativo</label>
                 <div className="input-com-icone input-com-icone--prefixo">
@@ -178,17 +222,53 @@ export default function Login() {
                   <input
                     className="form-input form-input--com-prefixo"
                     type="email"
-                    placeholder="nome@sustentascore.br"
+                    value={emailCodigo}
+                    onChange={(e) => setEmailCodigo(e.target.value)}
+                    placeholder="nome@gmail.com"
                     autoFocus
+                    required
                   />
                 </div>
               </div>
 
-              <p className="form-hint form-hint--warning">
-                Login por código de e-mail ainda não está disponível — em breve.
+              <p className="form-hint form-hint--muted">
+                Enviamos um código de 6 dígitos pro e-mail informado, válido só para quem já está cadastrado em Usuários.
               </p>
-              <button className="btn-primary login-submit" type="submit" disabled>
-                <Send size={16} /> Enviar código de acesso
+              {erroCodigo && <p className="form-hint form-hint--danger">{erroCodigo}</p>}
+              <button className="btn-primary login-submit" type="submit" disabled={enviandoCodigo}>
+                {enviandoCodigo ? <Loader2 size={16} className="login-robo-spin" /> : <Send size={16} />}
+                {enviandoCodigo ? 'Enviando…' : 'Enviar código de acesso'}
+              </button>
+            </form>
+          ) : (
+            <form className="login-form" onSubmit={handleConfirmarCodigo}>
+              <div className="form-group form-group--full">
+                <label className="form-label">Código recebido por e-mail</label>
+                <p className="form-hint form-hint--muted" style={{ marginTop: -2 }}>
+                  Enviado para <strong>{emailCodigo}</strong>.
+                </p>
+                <div className="input-com-icone input-com-icone--prefixo">
+                  <Lock size={16} className="input-icone-prefixo" />
+                  <input
+                    className="form-input form-input--com-prefixo"
+                    type="text"
+                    inputMode="numeric"
+                    value={codigoDigitado}
+                    onChange={(e) => setCodigoDigitado(e.target.value)}
+                    placeholder="000000"
+                    autoFocus
+                    required
+                  />
+                </div>
+              </div>
+
+              {erroCodigo && <p className="form-hint form-hint--danger">{erroCodigo}</p>}
+              <button className="btn-primary login-submit" type="submit" disabled={confirmandoCodigo}>
+                {confirmandoCodigo ? <Loader2 size={16} className="login-robo-spin" /> : <LogIn size={16} />}
+                {confirmandoCodigo ? 'Confirmando…' : 'Confirmar código'}
+              </button>
+              <button type="button" className="login-tab" style={{ marginTop: 4 }} onClick={voltarParaEmailCodigo}>
+                Usar outro e-mail / reenviar código
               </button>
             </form>
           )}

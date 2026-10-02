@@ -18,8 +18,10 @@ function temaInicial(): Tema {
   } catch {
     // localStorage pode estar bloqueado (modo privado) — segue sem preferência salva.
   }
-  // Sem preferência salva: respeita o tema do sistema operacional na primeira visita.
-  if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'escuro';
+  // Sem preferência salva: sempre entra no modo Claro — pedido explícito da
+  // usuária. O modo Escuro só é usado se a pessoa escolher manualmente pelo
+  // botão Claro/Escuro (aí sim fica salvo e lembrado nas próximas visitas,
+  // ver `useEffect` abaixo).
   return 'claro';
 }
 
