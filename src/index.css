@@ -2758,6 +2758,88 @@ html, body, #root {
 
 .payment-faixa--active .payment-faixa-pct { color: var(--text); font-weight: 500; }
 
+/* Aspectos de desempenho coletivo da unidade (água, energia, resíduos) — sem dedução automática. */
+.badge--coletivo {
+  background: var(--warning-pale);
+  border-color: var(--warning);
+  color: var(--pale-warning-text);
+}
+
+.aspecto-coletivo-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.aspecto-coletivo-check input { margin-top: 2px; flex-shrink: 0; }
+
+/* Aviso do formulário de Nova Ocorrência quando o Aspecto é de desempenho coletivo. */
+.trava-coletivo {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--warning-pale);
+  border: 1px solid var(--warning);
+  font-size: 12px;
+  color: var(--pale-warning-text);
+}
+
+.trava-coletivo svg { flex-shrink: 0; margin-top: 2px; }
+.trava-coletivo div { display: flex; flex-direction: column; gap: 4px; }
+.aspecto-coletivo-check strong { color: var(--text); }
+
+/* Sinalização da trava de pagamento (mínimo de 90% da NF, mesmo com Score < 350) —
+ * pedido da Vanessa: "importante ter essa sinalização". Fica sempre visível; ganha
+ * destaque (âmbar) quando o score exibido já está abaixo de 350. */
+.payment-trava {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.payment-trava svg { flex-shrink: 0; margin-top: 2px; }
+
+/* Valor da NF do mês (digitado pelo gestor) + valor a pagar calculado pela faixa do score. */
+.payment-nf {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+
+.payment-nf-label { font-size: 12px; color: var(--text-muted); }
+.payment-nf-input { width: 150px; padding: 6px 10px; font-size: 13px; }
+.payment-nf-input--erro { border-color: var(--danger); }
+.payment-nf-valor { font-size: 13px; font-weight: 600; }
+.payment-nf-resultado { font-size: 13px; color: var(--text-muted); }
+.payment-nf-resultado strong { color: var(--text); }
+
+.payment-trava div { display: flex; flex-direction: column; gap: 2px; }
+
+.payment-trava strong { color: var(--text); font-weight: 600; }
+
+.payment-trava--ativa {
+  background: var(--warning-pale);
+  border-color: var(--warning);
+  color: var(--pale-warning-text);
+}
+
+.payment-trava--ativa strong { color: var(--pale-warning-text); }
+
 .payment-history-header {
   display: flex;
   justify-content: space-between;

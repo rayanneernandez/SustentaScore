@@ -8,6 +8,8 @@ import {
 import { useData, statusVigencia, diasParaVencimento, formatarDataBR, criarEventoHistorico, ALERTA_DIAS_PADRAO } from '../context/DataContext';
 import { TAMANHO_MAX_ANEXO, MAX_ANEXOS_POR_ENVIO, arquivosParaAnexos } from '../utils/anexos';
 import { capitalizarPalavras } from '../utils/texto';
+import { UNIDADES_ADMINISTRATIVAS } from '../config/sistema';
+import { PAGAMENTO_MINIMO_NF } from '../utils/score';
 import { formatarTelefone } from '../utils/telefone';
 import type { Fornecedor, Contrato, HistoricoTipo, Anexo } from '../types';
 
@@ -298,7 +300,19 @@ function ModalContrato({
           {/* Unidade Administrativa */}
           <div className="form-group form-group--full">
             <label className="form-label">Unidade Administrativa</label>
-            <input className="form-input" placeholder="Ex: Superintendência de Infraestrutura" value={form.unidade} onChange={(e) => set('unidade', e.target.value)} />
+            <select className="form-input" value={form.unidade} onChange={(e) => set('unidade', e.target.value)}>
+              <option value="">Selecione...</option>
+              {/* Lista fechada nas 6 SADs (ver `UNIDADES_ADMINISTRATIVAS`). Contratos antigos
+                  cadastrados com outro texto continuam mostrando o valor que já tinham, até
+                  alguém escolher uma das 6 — sem isso o select abriria "vazio" e a edição
+                  apagaria a unidade sem querer. */}
+              {form.unidade && !UNIDADES_ADMINISTRATIVAS.includes(form.unidade) && (
+                <option value={form.unidade}>{form.unidade} (fora da lista — escolha uma das SADs)</option>
+              )}
+              {UNIDADES_ADMINISTRATIVAS.map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
           </div>
 
           {/* Vigência Início */}
@@ -718,7 +732,7 @@ function ModalDetalheContrato({
                 <div key={m.id} className="score-history-row">
                   <div className="history-period">{m.periodo}</div>
                   <div className="history-meta">
-                    Score: {m.score} · {m.pagamento}% do pagamento · {m.ocorrencias} ocorrência{m.ocorrencias !== 1 ? 's' : ''}
+                    Score: {m.score} · {Math.max(PAGAMENTO_MINIMO_NF, m.pagamento)}% do pagamento · {m.ocorrencias} ocorrência{m.ocorrencias !== 1 ? 's' : ''}
                   </div>
                 </div>
               ))}

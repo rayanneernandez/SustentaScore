@@ -223,6 +223,37 @@ function gerarNotificacoesVigencia(contratos: Contrato[]): Array<Omit<Notificaca
   return resultado;
 }
 
+/** Por quantos dias um alerta de treinamento (aspecto de desempenho coletivo) continua aparecendo no sino. */
+const DIAS_ALERTA_TREINAMENTO = 60;
+
+/**
+ * Alertas de "necessidade de treinamento": cada registro do tipo Treinamento ligado a
+ * um Aspecto de desempenho coletivo (`Indicador.impactoColetivo` — água, energia,
+ * resíduos) gera um alerta de campanha de redução de recursos, em vez de descontar
+ * pontos do fornecedor (pedido da Vanessa: esses indicadores refletem a unidade toda).
+ * Só considera registros recentes, pra o sino não acumular alertas antigos pra sempre.
+ */
+function gerarNotificacoesTreinamento(
+  ocorrencias: Ocorrencia[],
+  indicadores: Indicador[],
+): Array<Omit<Notificacao, 'lida'>> {
+  const coletivos = new Set(indicadores.filter((i) => i.impactoColetivo).map((i) => i.id));
+  const limite = new Date();
+  limite.setDate(limite.getDate() - DIAS_ALERTA_TREINAMENTO);
+  const limiteIso = `${limite.getFullYear()}-${String(limite.getMonth() + 1).padStart(2, '0')}-${String(limite.getDate()).padStart(2, '0')}`;
+
+  return ocorrencias
+    .filter((o) => o.tipoRegistro === 'treinamento' && !!o.indicadorId && coletivos.has(o.indicadorId) && o.data >= limiteIso)
+    .map((o) => ({
+      id: `treinamento:${o.id}`,
+      tipo: 'treinamento',
+      titulo: `Campanha de treinamento recomendada — ${o.indicadorNome ?? 'aspecto coletivo'}`,
+      descricao: `${o.fornecedorNome}: ${o.descricao} (${formatarDataBR(o.data)}). Reflete o desempenho coletivo da unidade — sem dedução de pontos.`,
+      urgencia: 'media' as const,
+      link: '/ocorrencias',
+    }));
+}
+
 const ORDEM_URGENCIA: Record<Notificacao['urgencia'], number> = { alta: 0, media: 1, baixa: 2 };
 
 // ── Contexto ─────────────────────────────────────────────────────
@@ -244,6 +275,8 @@ interface DataContextValue {
   addOcorrencia: (o: Ocorrencia) => void;
   /** Histórico de medições mensais de todos os contratos (ver Módulo 5 e 6). */
   medicoes: Medicao[];
+  /** Edita uma medição já existente — hoje só o valor da NF do mês (`valor`), informado pelo gestor. */
+  updateMedicao: (id: string, patch: Partial<Medicao>) => void;
   /** Curva-base usada para desenhar a "Evolução do score médio" no Painel Gerencial. */
   scoreHistorico: ScoreHistorico[];
   /** Macroindicadores de sustentabilidade. */
@@ -462,6 +495,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
 
   // ── Ocorrências ──────────────────────────────────────────────
+  const updateMedicao = (id: string, patch: Partial<Medicao>) => {
+    setDados((prev) =>
+      prev ? { ...prev, medicoes: prev.medicoes.map((m) => (m.id === id ? { ...m, ...patch } : m)) } : prev,
+    );
+    sincronizar(dbMedicoes.atualizar(id, patch), `editar medição ${id}`);
+  };
+
   const addOcorrencia = (o: Ocorrencia) => {
     setDados((prev) => (prev ? { ...prev, ocorrencias: [o, ...prev.ocorrencias] } : prev));
     sincronizar(dbOcorrencias.inserir(o), `nova ocorrência ${o.id}`);
@@ -760,7 +800,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const notificacoes = useMemo<Notificacao[]>(() => {
     if (!dados) return [];
-    const base = gerarNotificacoesVigencia(dados.contratos);
+    const base = [
+      ...gerarNotificacoesVigencia(dados.contratos),
+      ...gerarNotificacoesTreinamento(dados.ocorrencias, dados.indicadores),
+    ];
     return base
       .map((n) => ({ ...n, lida: dados.notificacoesLidasIds.includes(n.id) }))
       .sort((a, b) => {
@@ -787,6 +830,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ocorrencias: dados.ocorrencias,
       addOcorrencia,
       medicoes: dados.medicoes,
+      updateMedicao,
       scoreHistorico: dados.scoreHistorico,
       indicadores: dados.indicadores,
       addIndicador,

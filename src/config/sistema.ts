@@ -23,6 +23,21 @@ export const PAGINAS_SISTEMA: { key: PaginaKey; label: string; num: number }[] =
 ];
 
 /**
+ * Unidades Administrativas permitidas no cadastro de contrato (Fornecedores →
+ * Novo Contrato) — lista fechada, a pedido da Vanessa (gestora do contrato): só as
+ * 6 Superintendências de Administração regionais. Estrutura fixa do sistema, por
+ * isso fica em código (mesmo raciocínio de `PAGINAS_SISTEMA`, acima).
+ */
+export const UNIDADES_ADMINISTRATIVAS: string[] = [
+  'Superintendência de Administração da 1ª Região (SAD1R)',
+  'Superintendência de Administração da 2ª Região (SAD2R)',
+  'Superintendência de Administração da 3ª Região (SAD3R)',
+  'Superintendência de Administração da 4ª Região (SAD4R)',
+  'Superintendência de Administração da 5ª Região (SAD5R)',
+  'Superintendência de Administração da 6ª Região (SAD6R)',
+];
+
+/**
  * Telas que ficam sob "Administração" no menu, ou que ficam de fora do acesso
  * padrão do perfil Colaborador (`PERFIS_PADRAO`, abaixo) — são as telas de
  * configuração/estrutura, não do dia a dia operacional.

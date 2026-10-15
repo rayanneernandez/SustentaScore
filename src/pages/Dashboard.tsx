@@ -39,6 +39,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
+import { PAGAMENTO_MINIMO_NF, mediaDeScores, periodosComMedicao, scoreMedioDoPeriodo } from '../utils/score';
 import { useTheme } from '../context/ThemeContext';
 import NotificationBell from '../components/NotificationBell';
 import type { LayoutContext } from '../components/Layout';
@@ -46,7 +47,7 @@ import type { LayoutContext } from '../components/Layout';
 const faixasPagamento = [
   { range: '500 a 450', percentual: '100%', status: 'Verde', color: 'verde' },
   { range: '449 a 350', percentual: '95%', status: 'Cinza', color: 'cinza' },
-  { range: 'Abaixo de 350', percentual: '90%', status: 'Preto', color: 'preto' },
+  { range: 'Abaixo de 350', percentual: '90% (mínimo — nunca abaixo)', status: 'Preto', color: 'preto' },
 ];
 
 // Distribuição dos contratos pelas 3 faixas fixas do sistema — as cores/nomes são
@@ -72,10 +73,6 @@ const nomesMesesExtenso = [
 const CORES_UNIDADE = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7'];
 const COR_OUTRAS_UNIDADES = '#9CA3AF';
 const MAX_LINHAS_UNIDADE = 6;
-
-function limitarScore(score: number) {
-  return Math.max(0, Math.min(500, Math.round(score)));
-}
 
 const labelFaixaCompleto: Record<'verde' | 'cinza' | 'preto', string> = {
   verde: 'Verde',
@@ -191,19 +188,13 @@ export default function Dashboard() {
   const [menuExportAberto, setMenuExportAberto] = useState(false);
   const [exportando, setExportando] = useState<'imagem' | 'excel' | 'pdf' | null>(null);
 
-  const { contratos: todosContratos, ocorrencias, eixosPDLS, scoreHistorico } = useData();
+  const { contratos: todosContratos, ocorrencias, eixosPDLS, medicoes } = useData();
 
   // Contratos inativos não são contabilizados no score, nos indicadores nem nos alertas do painel.
   const contratos = useMemo(
     () => todosContratos.filter((item) => item.status === 'ativo'),
     [todosContratos],
   );
-
-  const mediaScoreGlobal = useMemo(() => {
-    if (!contratos.length) return 0;
-    const totalScoreGlobal = contratos.reduce((total, item) => total + item.score, 0);
-    return Math.round(totalScoreGlobal / contratos.length);
-  }, [contratos]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -279,8 +270,7 @@ export default function Dashboard() {
       return 0;
     }
 
-    const total = contratosFiltrados.reduce((sum, item) => sum + item.score, 0);
-    return Math.round(total / contratosFiltrados.length);
+    return mediaDeScores(contratosFiltrados.map((item) => item.score));
   }, [contratosFiltrados]);
 
   const pagamentoMedio = useMemo(() => {
@@ -288,7 +278,7 @@ export default function Dashboard() {
       return 0;
     }
 
-    const total = contratosFiltrados.reduce((sum, item) => sum + item.pagamento, 0);
+    const total = contratosFiltrados.reduce((sum, item) => sum + Math.max(PAGAMENTO_MINIMO_NF, item.pagamento), 0);
     return Math.round(total / contratosFiltrados.length);
   }, [contratosFiltrados]);
 
@@ -328,99 +318,92 @@ export default function Dashboard() {
     return Math.round((distribuicaoFiltrada[0].value / total) * 100);
   }, [distribuicaoFiltrada]);
 
-  const historicoFiltrado = useMemo(() => {
-    const ajuste = scoreMedio ? scoreMedio - mediaScoreGlobal : -mediaScoreGlobal;
-    const serie = scoreHistorico.map((item) => ({
-      ...item,
-      score: limitarScore(item.score + ajuste),
-    }));
-
-    // Corta a linha até o período selecionado (mesma lógica de antes) — no modo
-    // Mês, até o mês exato; no modo Ano, até o último mês daquele ano. Se o
-    // período escolhido não existir no histórico (ex: ano atual, sem dado ainda),
-    // mostra a série inteira em vez de cortar tudo.
+  // Evolução do score médio — calculada a partir das Medições REAIS dos contratos
+  // filtrados (uma por contrato por mês, criadas/atualizadas automaticamente a cada
+  // ocorrência, ver `reconciliarScoresDoMes` no DataContext). Antes o gráfico usava uma
+  // curva fixa de demonstração (`score_historico`) deslocada pela média atual, o que
+  // gerava valores como 389, 402, 423 — impossíveis seguindo a matemática do score
+  // (500 − múltiplos de 25), como a Vanessa observou.
+  const periodosDoGrafico = useMemo(() => {
+    const todos = periodosComMedicao(medicoes, idsContratosFiltrados);
+    // Corta a linha até o período selecionado — no modo Mês, até o mês exato; no modo
+    // Ano, até o último mês daquele ano. Se o período escolhido não existir no histórico
+    // (ex: ainda sem medição), mostra a série inteira em vez de cortar tudo.
     let indiceCorte = -1;
-    serie.forEach((item, indice) => {
-      const anoItem = 2000 + Number(item.mes.split('/')[1]);
-      const dentroDoRecorte =
-        modoPeriodo === 'mes' ? item.mes === periodoStrHistorico : anoItem === anoFiltro;
+    todos.forEach((periodo, indice) => {
+      const anoItem = 2000 + Number(periodo.split('/')[1]);
+      const dentroDoRecorte = modoPeriodo === 'mes' ? periodo === periodoStrHistorico : anoItem === anoFiltro;
       if (dentroDoRecorte) indiceCorte = indice;
     });
+    return indiceCorte >= 0 ? todos.slice(0, indiceCorte + 1) : todos;
+  }, [medicoes, idsContratosFiltrados, modoPeriodo, anoFiltro, periodoStrHistorico]);
 
-    return indiceCorte >= 0 ? serie.slice(0, indiceCorte + 1) : serie;
-  }, [modoPeriodo, anoFiltro, periodoStrHistorico, scoreMedio, scoreHistorico]);
+  const historicoFiltrado = useMemo(
+    () =>
+      periodosDoGrafico.map((periodo) => ({
+        mes: periodo,
+        score: scoreMedioDoPeriodo(medicoes, idsContratosFiltrados, periodo) ?? 0,
+      })),
+    [periodosDoGrafico, medicoes, idsContratosFiltrados],
+  );
 
   /**
-   * Evolução do score aplicada por unidade — usa a mesma técnica da série geral
-   * (desloca a tendência de `scoreHistorico` pela diferença entre a média da
-   * unidade e a média global), só que uma linha por unidade em vez de uma única
-   * linha agregada. Limita a `MAX_LINHAS_UNIDADE` linhas nomeadas e agrupa o
-   * restante em "Outras unidades" para o gráfico não ficar poluído.
+   * Evolução do score por unidade — mesma série real de Medições, só que uma linha por
+   * unidade em vez de uma única linha agregada. Limita a `MAX_LINHAS_UNIDADE` linhas
+   * nomeadas e agrupa o restante em "Outras unidades" para o gráfico não ficar poluído.
    */
   const { historicoPorUnidade, unidadesDoGrafico } = useMemo(() => {
-    const porUnidade = new Map<string, { total: number; qtd: number }>();
+    const porUnidade = new Map<string, { total: number; qtd: number; ids: Set<string> }>();
     for (const c of contratosFiltrados) {
       if (!c.unidade) continue;
-      const atual = porUnidade.get(c.unidade) ?? { total: 0, qtd: 0 };
+      const atual = porUnidade.get(c.unidade) ?? { total: 0, qtd: 0, ids: new Set<string>() };
       atual.total += c.score;
       atual.qtd += 1;
+      atual.ids.add(c.id);
       porUnidade.set(c.unidade, atual);
     }
 
     const unidadesOrdenadas = Array.from(porUnidade.entries())
-      .map(([nome, { total, qtd }]) => ({ nome, media: total / qtd, qtd }))
+      .map(([nome, { total, qtd, ids }]) => ({ nome, media: total / qtd, qtd, ids }))
       .sort((a, b) => b.qtd - a.qtd || b.media - a.media);
 
     const principais = unidadesOrdenadas.slice(0, MAX_LINHAS_UNIDADE);
     const restantes = unidadesOrdenadas.slice(MAX_LINHAS_UNIDADE);
 
     const nomesGrafico = principais.map((u) => u.nome);
+    const idsRestantes = new Set<string>();
+    for (const u of restantes) u.ids.forEach((id) => idsRestantes.add(id));
     if (restantes.length) nomesGrafico.push('Outras unidades');
 
-    const mediaRestantes = restantes.length
-      ? restantes.reduce((soma, u) => soma + u.media, 0) / restantes.length
-      : null;
-
-    const serie = scoreHistorico.map((item) => {
-      const linha: Record<string, string | number> = { mes: item.mes };
+    const serie = periodosDoGrafico.map((periodo) => {
+      const linha: Record<string, string | number> = { mes: periodo };
       for (const u of principais) {
-        linha[u.nome] = limitarScore(item.score + (u.media - mediaScoreGlobal));
+        const valor = scoreMedioDoPeriodo(medicoes, u.ids, periodo);
+        if (valor !== null) linha[u.nome] = valor;
       }
-      if (mediaRestantes !== null) {
-        linha['Outras unidades'] = limitarScore(item.score + (mediaRestantes - mediaScoreGlobal));
+      if (restantes.length) {
+        const valor = scoreMedioDoPeriodo(medicoes, idsRestantes, periodo);
+        if (valor !== null) linha['Outras unidades'] = valor;
       }
       return linha;
     });
 
-    let indiceCorte = -1;
-    serie.forEach((item, indice) => {
-      const anoItem = 2000 + Number((item.mes as string).split('/')[1]);
-      const dentroDoRecorte =
-        modoPeriodo === 'mes' ? item.mes === periodoStrHistorico : anoItem === anoFiltro;
-      if (dentroDoRecorte) indiceCorte = indice;
-    });
-
-    const serieFinal = indiceCorte >= 0 ? serie.slice(0, indiceCorte + 1) : serie;
-
-    return { historicoPorUnidade: serieFinal, unidadesDoGrafico: nomesGrafico };
-  }, [contratosFiltrados, mediaScoreGlobal, modoPeriodo, anoFiltro, periodoStrHistorico, scoreHistorico]);
+    return { historicoPorUnidade: serie, unidadesDoGrafico: nomesGrafico };
+  }, [contratosFiltrados, medicoes, periodosDoGrafico]);
 
   /** Unidade com a maior média de score entre os contratos ativos — independe dos
    * filtros de Órgão/Unidade (senão a comparação perde sentido), mas respeita
    * fornecedor/contrato/período selecionados. */
   const unidadeMaisSustentavel = useMemo(() => {
-    const porUnidade = new Map<string, { total: number; qtd: number }>();
+    const porUnidade = new Map<string, number[]>();
     for (const c of contratos) {
       if (!c.unidade) continue;
-      const atual = porUnidade.get(c.unidade) ?? { total: 0, qtd: 0 };
-      atual.total += c.score;
-      atual.qtd += 1;
-      porUnidade.set(c.unidade, atual);
+      porUnidade.set(c.unidade, [...(porUnidade.get(c.unidade) ?? []), c.score]);
     }
 
     let melhor: { nome: string; media: number } | null = null;
-    for (const [nome, { total, qtd }] of porUnidade) {
-      const media = Math.round(total / qtd);
+    for (const [nome, scores] of porUnidade) {
+      const media = mediaDeScores(scores);
       if (!melhor || media > melhor.media) melhor = { nome, media };
     }
     return melhor;
@@ -1009,7 +992,12 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-          {modoEvolucao === 'geral' ? (
+          {historicoFiltrado.length === 0 ? (
+            <p className="empty-state-sm">
+              Ainda não há medições registradas para os filtros selecionados — o gráfico passa a mostrar a evolução
+              assim que o primeiro mês for medido.
+            </p>
+          ) : modoEvolucao === 'geral' ? (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={historicoFiltrado} margin={{ top: 20, right: 20, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E1D8" />
@@ -1051,6 +1039,7 @@ export default function Dashboard() {
                     strokeWidth={2}
                     dot={{ r: 3 }}
                     activeDot={{ r: 5 }}
+                    connectNulls
                   />
                 ))}
               </LineChart>

@@ -13,8 +13,8 @@ const unidadeMedidaLabel: Record<UnidadeMedidaPDLS, string> = {
   outro: 'Outro',
 };
 
-type FormAspecto = { nome: string; descricao: string };
-const formAspectoVazio: FormAspecto = { nome: '', descricao: '' };
+type FormAspecto = { nome: string; descricao: string; impactoColetivo: boolean };
+const formAspectoVazio: FormAspecto = { nome: '', descricao: '', impactoColetivo: false };
 
 type FormPDLS = {
   nome: string;
@@ -195,14 +195,22 @@ export default function EstruturaSustentabilidade() {
 
   const abrirEditarAspecto = (ind: Indicador) => {
     setEditandoAspectoId(ind.id);
-    setFormAspecto({ nome: ind.nome, descricao: ind.descricao });
+    setFormAspecto({ nome: ind.nome, descricao: ind.descricao, impactoColetivo: !!ind.impactoColetivo });
     setMostrarFormAspecto(true);
   };
 
   const salvarAspecto = () => {
     if (!formAspecto.nome.trim() || !objetoSelecionado) return;
     if (editandoAspectoId) {
-      updateIndicador(editandoAspectoId, { nome: formAspecto.nome, descricao: formAspecto.descricao });
+      // `impactoColetivo` só vai no patch quando mudou — assim editar nome/descrição de um
+      // Aspecto continua funcionando mesmo antes de a coluna existir no banco.
+      const original = indicadores.find((i) => i.id === editandoAspectoId);
+      const mudouColetivo = formAspecto.impactoColetivo !== !!original?.impactoColetivo;
+      updateIndicador(editandoAspectoId, {
+        nome: formAspecto.nome,
+        descricao: formAspecto.descricao,
+        ...(mudouColetivo ? { impactoColetivo: formAspecto.impactoColetivo } : {}),
+      });
     } else {
       const novo: Indicador = {
         id: `i${Date.now()}`,
@@ -211,6 +219,9 @@ export default function EstruturaSustentabilidade() {
         tipo: objetoSelecionado,
         contratosVinculados: 0,
         icone: 'leaf',
+        // Só envia o campo quando marcado — assim criar um Aspecto comum continua
+        // funcionando mesmo antes de a coluna `impacto_coletivo` existir no banco.
+        ...(formAspecto.impactoColetivo ? { impactoColetivo: true } : {}),
       };
       addIndicador(novo);
       setAspectoSelecionadoId(novo.id);
@@ -523,6 +534,13 @@ export default function EstruturaSustentabilidade() {
             )}
           </div>
 
+          {aspectoSelecionado?.impactoColetivo && (
+            <p className="form-hint form-hint--muted" style={{ marginTop: 6 }}>
+              <strong>Desempenho coletivo da unidade:</strong> as ocorrências deste aspecto não descontam pontos
+              automaticamente (viram "Treinamento"); só a dedução manual, com justificativa, desconta.
+            </p>
+          )}
+
           {aspectoSelecionado && (podeEditar || podeExcluir) && (
             <div className="eixo-gerenciar-row">
               {podeEditar && (
@@ -552,6 +570,17 @@ export default function EstruturaSustentabilidade() {
                 value={formAspecto.descricao}
                 onChange={(e) => setFormAspecto((p) => ({ ...p, descricao: e.target.value }))}
               />
+              <label className="aspecto-coletivo-check">
+                <input
+                  type="checkbox"
+                  checked={formAspecto.impactoColetivo}
+                  onChange={(e) => setFormAspecto((p) => ({ ...p, impactoColetivo: e.target.checked }))}
+                />
+                <span>
+                  <strong>Reflete o desempenho coletivo da unidade</strong> (consumo de água, energia elétrica ou geração
+                  de resíduos) — não desconta pontos do fornecedor automaticamente; gera alerta de treinamento.
+                </span>
+              </label>
               <button className="btn-secondary" onClick={() => { setMostrarFormAspecto(false); setEditandoAspectoId(null); }}>Cancelar</button>
               <button className="btn-primary" onClick={salvarAspecto}>
                 {editandoAspectoId ? 'Salvar' : <><Plus size={14} /> Adicionar</>}

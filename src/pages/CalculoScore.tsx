@@ -1,26 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell } from 'recharts';
 import { useData } from '../context/DataContext';
+import { PAGAMENTO_MINIMO_NF, SCORE_INICIAL_MES, SCORE_ZONA_PRETA, periodoParaChave } from '../utils/score';
 
 function getFaixa(score: number): { label: string; color: string; pct: string } {
   if (score >= 450) return { label: 'Zona Verde', color: '#3D5C3E', pct: '100% do pagamento' };
   if (score >= 350) return { label: 'Zona Cinza', color: '#9CA3AF', pct: '95% do pagamento' };
-  return { label: 'Zona Preta', color: '#1F2937', pct: '90% do pagamento + sanções' };
-}
-
-const MESES_ABREV: Record<string, number> = {
-  jan: 0, fev: 1, mar: 2, abr: 3, mai: 4, jun: 5,
-  jul: 6, ago: 7, set: 8, out: 9, nov: 10, dez: 11,
-};
-
-// Transforma "ago/26" em um número comparável (ano*12+mês) pra dar pra ordenar
-// os períodos corretamente — comparar as strings direto não funciona (ex:
-// "jan/27" viria antes de "dez/26" numa comparação alfabética).
-function periodoParaChave(periodo: string): number {
-  const [mesStr, anoStr] = periodo.toLowerCase().split('/');
-  const mes = MESES_ABREV[mesStr] ?? 0;
-  const ano = Number(anoStr);
-  return (Number.isFinite(ano) ? ano : 0) * 12 + mes;
+  return { label: 'Zona Preta', color: '#1F2937', pct: `${PAGAMENTO_MINIMO_NF}% do pagamento (mínimo) + sanções` };
 }
 
 export default function CalculoScore() {
@@ -114,8 +100,10 @@ export default function CalculoScore() {
 
   const score = medicao?.score ?? contrato?.score ?? 0;
   const ocorrenciasQtd = medicao?.ocorrencias ?? 0;
-  const deducaoTotal = ocorrenciasQtd * 25;
-  const pagamentoPct = medicao?.pagamento ?? contrato?.pagamento ?? 0;
+  // Total de deduções = o que foi descontado dos 500 pontos iniciais — não `ocorrências × 25`,
+  // porque a dedução de cada ocorrência é registrada na hora (25 por padrão, mas editável).
+  const deducaoTotal = Math.max(0, SCORE_INICIAL_MES - score);
+  const pagamentoPct = Math.max(PAGAMENTO_MINIMO_NF, medicao?.pagamento ?? contrato?.pagamento ?? 0);
   const faixa = getFaixa(score);
 
   const donutData = [
@@ -224,7 +212,7 @@ export default function CalculoScore() {
           <div className="score-breakdown">
             <div className="breakdown-row">
               <span>Pontuação inicial do mês</span>
-              <strong>500</strong>
+              <strong>{SCORE_INICIAL_MES}</strong>
             </div>
             <div className="breakdown-row breakdown-row--warn">
               <span>Ocorrências no período</span>
@@ -243,6 +231,12 @@ export default function CalculoScore() {
               <strong>{pagamentoPct}%</strong>
             </div>
           </div>
+          {score < SCORE_ZONA_PRETA && (
+            <p className="form-hint form-hint--muted" style={{ marginTop: 8 }}>
+              Score abaixo de {SCORE_ZONA_PRETA}: o pagamento da NF fica travado em {PAGAMENTO_MINIMO_NF}% (nunca abaixo disso),
+              e as sanções previstas se aplicam.
+            </p>
+          )}
 
           {/* Histórico */}
           <div className="score-history">
@@ -250,7 +244,7 @@ export default function CalculoScore() {
             {historicoAsc.map((m) => (
               <div key={m.id} className="score-history-row">
                 <div className="history-period">{m.periodo}</div>
-                <div className="history-meta">Score: {m.score} · {m.pagamento}% do pagamento · {m.ocorrencias} ocorrência{m.ocorrencias !== 1 ? 's' : ''}</div>
+                <div className="history-meta">Score: {m.score} · {Math.max(PAGAMENTO_MINIMO_NF, m.pagamento)}% do pagamento · {m.ocorrencias} ocorrência{m.ocorrencias !== 1 ? 's' : ''}</div>
                 <div className={`history-status history-status--${m.status}`}>
                   {m.status === 'liberado' ? 'Liberado' : m.status === 'pendente' ? 'Pendente' : 'Bloqueado'}
                 </div>

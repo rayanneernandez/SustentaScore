@@ -93,6 +93,17 @@ export interface Indicador {
   tipo: string;
   contratosVinculados: number;
   icone: string;
+  /**
+   * Aspecto cujo resultado reflete o desempenho COLETIVO da unidade administrativa
+   * (consumo de água, energia elétrica, geração de resíduos) — e não a atuação de um
+   * único fornecedor, que não controla o comportamento dos servidores, de outros
+   * terceirizados e as características físicas do prédio (pedido da Vanessa, gestora
+   * do contrato). Aspectos marcados assim NÃO descontam pontos do score
+   * automaticamente: o registro vira "Treinamento" (gera alerta de campanha de
+   * redução de recursos), e só desconta se alguém aplicar a dedução manual com
+   * justificativa escrita (ver `Ocorrencias.tsx`). Opcional: ausente = `false`.
+   */
+  impactoColetivo?: boolean;
 }
 
 /**
@@ -190,6 +201,13 @@ export interface Ocorrencia {
   link?: string;
   /** Arquivos anexados ao registro — ex: certificado de participação, material do treinamento. */
   anexos?: Anexo[];
+  /**
+   * Justificativa escrita da dedução MANUAL — só existe em ocorrências de Aspectos de
+   * desempenho coletivo (`Indicador.impactoColetivo`), que por padrão não descontam
+   * pontos: aqui alguém decidiu descontar mesmo assim, por uma situação excepcional
+   * causada comprovadamente pelo fornecedor, e precisou explicar o porquê.
+   */
+  justificativaDeducaoManual?: string;
 }
 
 export interface Medicao {

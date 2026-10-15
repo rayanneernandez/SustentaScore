@@ -367,3 +367,22 @@ on conflict (id) do update set
 -- gráfico (ver comentário na criação da tabela) — pode ser adicionada depois,
 -- pela própria tela ou voltando a preencher este arquivo, se/quando fizer
 -- sentido pra você.
+
+-- ── Migração (outubro/2026): trava dos Aspectos de desempenho coletivo ──────
+-- Pedido da Vanessa: indicadores de consumo de água, energia elétrica e geração
+-- de resíduos refletem o desempenho da unidade administrativa inteira, não de um
+-- único fornecedor — então NÃO descontam pontos automaticamente. O registro vira
+-- "Treinamento" (gera alerta de campanha de redução de recursos); só a dedução
+-- manual, com justificativa escrita, desconta. Seguro rodar mais de uma vez.
+--
+-- 1) coluna que marca o Aspecto como "desempenho coletivo da unidade"
+alter table indicadores add column if not exists impacto_coletivo boolean not null default false;
+-- 2) justificativa escrita da dedução manual (só preenchida nesses casos)
+alter table ocorrencias add column if not exists justificativa_deducao_manual text;
+
+-- 3) Aspectos já marcados de partida — os que falam de água, energia ou resíduos
+-- no consumo/geração da unidade (i7, i8, i10, i21: limpeza e apoio administrativo;
+-- i12: consumo de água; i14: eficiência de equipamentos, citada como o de energia).
+-- CONFIRMAR COM A VANESSA a lista final — dá pra marcar/desmarcar a qualquer
+-- momento em Estrutura de Sustentabilidade → Passo 2 → "Editar este aspecto".
+update indicadores set impacto_coletivo = true where id in ('i7', 'i8', 'i10', 'i12', 'i14', 'i21');

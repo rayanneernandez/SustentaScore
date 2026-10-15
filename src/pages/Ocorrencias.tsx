@@ -24,6 +24,10 @@ function criarFormVazio() {
     data: '',
     deducao: 25,
     tipoRegistro: 'ocorrencia' as TipoRegistroOcorrencia,
+    /** Só usado em Aspectos de desempenho coletivo (`Indicador.impactoColetivo`): marca que
+     * a pessoa quer descontar pontos mesmo assim (situação excepcional causada pelo fornecedor). */
+    deducaoManual: false,
+    justificativa: '',
     registradoPor: '',
     link: '',
   };
@@ -46,6 +50,7 @@ export default function Ocorrencias() {
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [erroArquivo, setErroArquivo] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [erroJustificativa, setErroJustificativa] = useState(false);
 
   const nomeEixo = (id?: string) => {
     const eixo = eixosPDLS.find((e) => e.id === id);
@@ -69,6 +74,9 @@ export default function Ocorrencias() {
   const contratosDoFornecedorSelecionado = contratos.filter((c) => c.fornecedorId === form.fornecedorId);
   const eixosDoAspectoDoForm = eixosDoAspecto(form.indicadorId);
   const contratoSelecionado = contratos.find((c) => c.id === form.contratoId);
+  /** O Aspecto escolhido reflete o desempenho coletivo da unidade (água, energia, resíduos)?
+   * Se sim, o registro NÃO desconta pontos por padrão (vira Treinamento + alerta). */
+  const aspectoColetivo = !!indicadores.find((i) => i.id === form.indicadorId)?.impactoColetivo;
   const fiscaisSugeridos = Array.from(
     new Set(
       [contratoSelecionado?.fiscalTecnico, contratoSelecionado?.fiscalAdministrativo, contratoSelecionado?.fiscalSubstituto]
@@ -104,11 +112,17 @@ export default function Ocorrencias() {
     setForm(criarFormVazio());
     setArquivos([]);
     setErroArquivo('');
+    setErroJustificativa(false);
   };
 
   const handleAdd = async () => {
     if (!form.fornecedorId || !form.descricao) return;
     if (eixosDoAspectoDoForm.length > 0 && !form.eixoPDLSId) return;
+    const deducaoManualAplicada = aspectoColetivo && form.deducaoManual;
+    if (deducaoManualAplicada && !form.justificativa.trim()) {
+      setErroJustificativa(true);
+      return;
+    }
     setSalvando(true);
     const forn = fornecedores.find((f) => f.id === form.fornecedorId);
     const ind = indicadores.find((i) => i.id === form.indicadorId);
@@ -128,6 +142,7 @@ export default function Ocorrencias() {
       registradoPor: form.registradoPor || undefined,
       link: form.link || undefined,
       anexos,
+      justificativaDeducaoManual: deducaoManualAplicada ? form.justificativa.trim() : undefined,
     };
     addOcorrencia(nova);
     setSalvando(false);
@@ -198,6 +213,9 @@ export default function Ocorrencias() {
                         <GraduationCap size={12} /> Treinamento
                       </span>
                     )}
+                    {o.justificativaDeducaoManual && (
+                      <span className="badge badge--outline badge--coletivo">Dedução manual</span>
+                    )}
                     <span className="occurrence-desc">{o.descricao}</span>
                   </div>
                   <div className="occurrence-item-right">
@@ -237,6 +255,12 @@ export default function Ocorrencias() {
                         )}
                       </div>
                     </div>
+                    {o.justificativaDeducaoManual && (
+                      <div style={{ marginTop: 10 }}>
+                        <span className="detail-label">Justificativa da dedução manual</span>
+                        <span className="detail-value">{o.justificativaDeducaoManual}</span>
+                      </div>
+                    )}
                     {(o.link || (o.anexos && o.anexos.length > 0)) && (
                       <div className="occurrence-detail-anexos">
                         {o.link && (
@@ -276,6 +300,61 @@ export default function Ocorrencias() {
               <button className="modal-close" onClick={fecharModal}><X size={18} /></button>
             </div>
 
+            {aspectoColetivo ? (
+              <div className="form-group form-group--full">
+                <label className="form-label">Tipo de registro</label>
+                <div className="trava-coletivo" role="note">
+                  <GraduationCap size={16} />
+                  <div>
+                    <strong>Aspecto de desempenho coletivo da unidade — sem dedução automática</strong>
+                    <span>
+                      Consumo de água, energia elétrica e geração de resíduos refletem o desempenho global da unidade
+                      administrativa (servidores, outros terceirizados e características do prédio também influenciam), e não
+                      a atuação de um único fornecedor. Por isso este registro entra como <strong>Treinamento</strong>: gera o
+                      alerta de campanha de redução de recursos, sem descontar pontos do score.
+                    </span>
+                  </div>
+                </div>
+                <label className="aspecto-coletivo-check" style={{ marginTop: 10 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.deducaoManual}
+                    onChange={(e) => {
+                      const marcado = e.target.checked;
+                      setErroJustificativa(false);
+                      setForm((p) => ({
+                        ...p,
+                        deducaoManual: marcado,
+                        tipoRegistro: marcado ? 'ocorrencia' : 'treinamento',
+                        deducao: marcado ? 25 : 0,
+                        justificativa: marcado ? p.justificativa : '',
+                      }));
+                    }}
+                  />
+                  <span>
+                    <strong>Aplicar dedução manual mesmo assim</strong> — só para situação excepcional que o fornecedor
+                    causou (ex: vazamento ou desperdício comprovadamente dele). Exige justificativa escrita.
+                  </span>
+                </label>
+                {form.deducaoManual && (
+                  <>
+                    <textarea
+                      className="form-input"
+                      style={{ marginTop: 8, minHeight: 70, resize: 'vertical' }}
+                      placeholder="Justificativa da dedução manual (obrigatória)..."
+                      value={form.justificativa}
+                      onChange={(e) => {
+                        setErroJustificativa(false);
+                        setForm((p) => ({ ...p, justificativa: e.target.value }));
+                      }}
+                    />
+                    {erroJustificativa && (
+                      <span className="form-hint form-hint--danger">Informe a justificativa para aplicar a dedução manual.</span>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : (
             <div className="form-group form-group--full">
               <label className="form-label">Tipo de registro</label>
               <div className="segmented-toggle">
@@ -300,6 +379,7 @@ export default function Ocorrencias() {
                 </p>
               )}
             </div>
+            )}
 
             <div className="form-group">
               <label className="form-label">Fornecedor</label>
@@ -334,7 +414,17 @@ export default function Ocorrencias() {
                 onChange={(e) => {
                   const novoIndicadorId = e.target.value;
                   const eixos = eixosDoAspecto(novoIndicadorId);
-                  setForm({ ...form, indicadorId: novoIndicadorId, eixoPDLSId: eixos[0]?.id ?? '' });
+                  const novoColetivo = !!indicadores.find((i) => i.id === novoIndicadorId)?.impactoColetivo;
+                  setErroJustificativa(false);
+                  setForm((p) => {
+                    const base = { ...p, indicadorId: novoIndicadorId, eixoPDLSId: eixos[0]?.id ?? '' };
+                    // Aspecto de desempenho coletivo: entra como Treinamento (sem dedução). Ao sair
+                    // dele, volta pro padrão (Ocorrência com 25 pontos) — mas só se o tipo tinha
+                    // sido definido por essa trava, nunca sobrescreve uma escolha manual.
+                    if (novoColetivo && !aspectoColetivo) return { ...base, tipoRegistro: 'treinamento' as TipoRegistroOcorrencia, deducao: 0, deducaoManual: false, justificativa: '' };
+                    if (!novoColetivo && aspectoColetivo) return { ...base, tipoRegistro: 'ocorrencia' as TipoRegistroOcorrencia, deducao: 25, deducaoManual: false, justificativa: '' };
+                    return base;
+                  });
                 }}
               >
                 <option value="">Selecione...</option>

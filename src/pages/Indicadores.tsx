@@ -4,6 +4,7 @@ import {
   Recycle, Droplets, Zap, Leaf, Wind, Users, X, Filter, FileText, ClipboardCheck, ArrowRight, Paperclip,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
+import { capitalizarPalavras } from '../utils/texto';
 import type { Indicador, UnidadeMedidaPDLS } from '../types';
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -14,6 +15,16 @@ const iconMap: Record<string, React.ReactNode> = {
   wind: <Wind size={18} strokeWidth={1.5} />,
   users: <Users size={18} strokeWidth={1.5} />,
 };
+
+/** Texto da tag verde no card do Aspecto: mostra o NÚMERO do(s) Eixo(s) PDLS ao qual
+ * ele pertence (ex: "Eixo 6", "Eixos 2 e 6", "Eixos 1, 3 e 6") — antes mostrava só a
+ * quantidade ("1 Eixo PDLS"), o que não dizia qual era o eixo (pedido da Vanessa). */
+function rotuloEixos(eixos: { numero: number }[]): string {
+  const numeros = [...eixos].map((e) => e.numero).sort((a, b) => a - b);
+  if (numeros.length === 1) return `Eixo ${numeros[0]}`;
+  const ultimo = numeros[numeros.length - 1];
+  return `Eixos ${numeros.slice(0, -1).join(', ')} e ${ultimo}`;
+}
 
 const unidadeMedidaLabel: Record<UnidadeMedidaPDLS, string> = {
   percentual: 'Percentual',
@@ -119,7 +130,7 @@ export default function Indicadores() {
         <select className="filter-select-plain" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
           <option value="todos">Todos os objetos</option>
           {tiposDisponiveis.map((t) => (
-            <option key={t} value={t}>{t}</option>
+            <option key={t} value={t}>{capitalizarPalavras(t)}</option>
           ))}
         </select>
         <span className="occurrence-count">
@@ -136,13 +147,18 @@ export default function Indicadores() {
             <div key={ind.id} className="indicator-card" onClick={() => setDetalhe(ind)}>
               <div className="indicator-card-top">
                 <div className="indicator-card-badges">
-                  <span className="badge badge--outline">{ind.tipo}</span>
+                  <span className="badge badge--outline">{capitalizarPalavras(ind.tipo)}</span>
+                  {ind.impactoColetivo && (
+                    <span className="badge badge--outline badge--coletivo" title="Desempenho coletivo da unidade — não desconta pontos do fornecedor automaticamente">
+                      Desempenho coletivo
+                    </span>
+                  )}
                   {totalIndicadores === 0 ? (
                     <span className="badge badge--gray">Sem Eixo PDLS cadastrado</span>
                   ) : (
                     <>
                       {eixos.length > 0 && (
-                        <span className="badge badge--green">{eixos.length} Eixo{eixos.length !== 1 ? 's' : ''} PDLS</span>
+                        <span className="badge badge--green">{rotuloEixos(eixos)}</span>
                       )}
                       {semVinculo.length > 0 && <span className="badge badge--gray">Sem vinculação ao PDLS</span>}
                     </>
@@ -153,7 +169,7 @@ export default function Indicadores() {
                 <div className="indicator-card-icon">
                   {iconMap[ind.icone] || <Leaf size={18} strokeWidth={1.5} />}
                 </div>
-                <h3 className="indicator-card-name">{ind.nome}</h3>
+                <h3 className="indicator-card-name">{capitalizarPalavras(ind.nome)}</h3>
                 <ArrowRight size={15} className="indicator-card-arrow" />
               </div>
             </div>
@@ -169,13 +185,23 @@ export default function Indicadores() {
         <div className="modal-overlay" onClick={() => setDetalhe(null)}>
           <div className="modal modal--lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">{detalhe.nome}</h2>
+              <h2 className="modal-title">{capitalizarPalavras(detalhe.nome)}</h2>
               <button className="modal-close" onClick={() => setDetalhe(null)}><X size={18} /></button>
             </div>
             <p className="modal-subtitle">{detalhe.descricao}</p>
             <div className="indicator-card-badges" style={{ marginBottom: 0 }}>
-              <span className="badge badge--outline">{detalhe.tipo}</span>
+              <span className="badge badge--outline">{capitalizarPalavras(detalhe.tipo)}</span>
+              {detalhe.impactoColetivo && <span className="badge badge--outline badge--coletivo">Desempenho coletivo</span>}
             </div>
+            {detalhe.impactoColetivo && (
+              <p className="form-hint form-hint--muted" style={{ marginTop: 8 }}>
+                Este aspecto reflete o desempenho global da unidade administrativa — influenciado também pelos servidores,
+                por outros terceirizados e pelas características do prédio — e não pode ser atribuído exclusivamente a um
+                único fornecedor. As ocorrências aqui <strong>não descontam pontos automaticamente</strong>: viram
+                "Treinamento" e geram alerta de campanha de redução de recursos. A dedução manual só se aplica em situação
+                excepcional causada pelo fornecedor, com justificativa escrita.
+              </p>
+            )}
 
             <div className="detail-block">
               <span className="detail-label">Eixos PDLS e Indicadores de Desempenho</span>

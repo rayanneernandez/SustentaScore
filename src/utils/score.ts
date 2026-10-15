@@ -9,6 +9,19 @@ import type { Medicao, Ocorrencia, ScoreFaixa } from '../types';
  */
 export const SCORE_INICIAL_MES = 500;
 
+/**
+ * Pagamento mínimo da NF (% do valor da NF da Unidade) — pedido da Vanessa
+ * (gestora do contrato): o Score pode cair abaixo de 350 (Zona Preta, que também
+ * prevê sanções), mas a trava no pagamento da Nota Fiscal ao fornecedor NUNCA fica
+ * abaixo de 90%. Conferido contra a tabela do Indicador Nº 03 (Faixas de ajuste no
+ * pagamento): 5 a 4,5 → 100%; 4,5 a 3,5 → 95%; menor que 3,5 → 90% (todas
+ * multiplicadas por 100 no sistema, daí 500 / 450 / 350).
+ */
+export const PAGAMENTO_MINIMO_NF = 90;
+
+/** Abaixo desta pontuação o contrato está na Zona Preta (pagamento travado no mínimo + sanções). */
+export const SCORE_ZONA_PRETA = 350;
+
 /** Faixas de pontuação e o respectivo percentual de liberação do pagamento da
  * NF — os mesmos limites já usados em Cálculo do Score e Medição e Pagamento. */
 export function faixaDoScore(score: number): ScoreFaixa {
@@ -20,7 +33,71 @@ export function faixaDoScore(score: number): ScoreFaixa {
 export function pagamentoDaFaixa(faixa: ScoreFaixa): number {
   if (faixa === 'verde') return 100;
   if (faixa === 'cinza') return 95;
-  return 90;
+  return PAGAMENTO_MINIMO_NF;
+}
+
+/** Percentual do pagamento da NF a aplicar pra um score — já com a trava de
+ * {@link PAGAMENTO_MINIMO_NF} (nunca devolve menos que isso, qualquer que seja o score). */
+export function pagamentoDoScore(score: number): number {
+  return Math.max(PAGAMENTO_MINIMO_NF, pagamentoDaFaixa(faixaDoScore(score)));
+}
+
+export interface ValorAPagar {
+  /** % do valor da NF a pagar (100 / 95 / 90), já com a trava de mínimo de 90%. */
+  percentual: number;
+  /** Valor da NF × percentual — o que deve ser pago ao fornecedor. */
+  valorAPagar: number;
+  /** Quanto fica de fora do pagamento (valor da NF − valor a pagar). */
+  desconto: number;
+}
+
+/**
+ * Valor a pagar de uma NF a partir do valor nominal informado pelo gestor e do score do mês,
+ * seguindo as faixas de pagamento do Indicador Nº 03 (ver {@link pagamentoDoScore}). Arredonda
+ * pra centavo. Ex: NF de R$ 10.000 com score 400 (faixa 95%) → paga R$ 9.500, desconto R$ 500.
+ */
+export function calcularValorAPagar(valorNF: number, score: number): ValorAPagar {
+  const percentual = pagamentoDoScore(score);
+  const valorAPagar = Math.round(valorNF * percentual) / 100;
+  const desconto = Math.round((valorNF - valorAPagar) * 100) / 100;
+  return { percentual, valorAPagar, desconto };
+}
+
+/**
+ * Média de scores pra exibição (KPI e gráfico de evolução). Com mais de um
+ * contrato a média é arredondada pro múltiplo de 5 mais próximo — a Vanessa
+ * observou que, seguindo a matemática do score (descontos de 25 pontos), os
+ * valores exibidos só podem terminar em 0 ou 5; uma média de 475 e 500 daria 487,5.
+ * Com um contrato só, devolve o score dele como está.
+ */
+export function mediaDeScores(valores: number[]): number {
+  if (valores.length === 0) return 0;
+  if (valores.length === 1) return valores[0];
+  const media = valores.reduce((soma, v) => soma + v, 0) / valores.length;
+  return Math.max(0, Math.min(SCORE_INICIAL_MES, Math.round(media / 5) * 5));
+}
+
+/** Transforma "ago/26" em um número comparável (ano*12+mês), pra ordenar períodos
+ * cronologicamente — comparar as strings direto não funciona ("jan/27" < "dez/26"). */
+export function periodoParaChave(periodo: string): number {
+  const [mesStr, anoStr] = periodo.toLowerCase().split('/');
+  const mes = Math.max(0, MESES_ABREV_ORDEM.indexOf(mesStr));
+  const ano = Number(anoStr);
+  return (Number.isFinite(ano) ? ano : 0) * 12 + mes;
+}
+
+/** Períodos ("mmm/aa") que têm Medição registrada pra algum dos contratos, em ordem cronológica. */
+export function periodosComMedicao(medicoes: Medicao[], contratoIds: Set<string>): string[] {
+  const periodos = new Set<string>();
+  for (const m of medicoes) if (contratoIds.has(m.contratoId)) periodos.add(m.periodo);
+  return [...periodos].sort((a, b) => periodoParaChave(a) - periodoParaChave(b));
+}
+
+/** Score médio (ver {@link mediaDeScores}) dos contratos informados num período, a partir
+ * das Medições reais — `null` se nenhum deles tem Medição naquele mês. */
+export function scoreMedioDoPeriodo(medicoes: Medicao[], contratoIds: Set<string>, periodo: string): number | null {
+  const valores = medicoes.filter((m) => m.periodo === periodo && contratoIds.has(m.contratoId)).map((m) => m.score);
+  return valores.length ? mediaDeScores(valores) : null;
 }
 
 /** "YYYY-MM" do mês corrente (horário local do navegador) — usado pra filtrar
