@@ -274,11 +274,6 @@ export default function Login() {
           )}
 
         </div>
-
-        <div className="login-info-box">
-          <p className="login-hint-title">Acesso de teste:</p>
-          <p>Colaborador — colaborador@sustentascore.br / colab123</p>
-        </div>
       </div>
     </div>
   );
