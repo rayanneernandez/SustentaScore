@@ -313,7 +313,8 @@ insert into indicadores (id, nome, descricao, tipo, contratos_vinculados, icone)
   ('i20', 'Monitoramento da Performance e Segurança Operacional', 'Monitoramento contínuo da performance e da segurança operacional da frota.', 'Locação de veículos', 0, 'wind'),
   -- Tabela 3 — Apoio Administrativo
   ('i9', 'Uso Racional de Materiais', 'Redução da aquisição de materiais de consumo administrativo.', 'Apoio Administrativo', 0, 'leaf'),
-  ('i10', 'Redução do Consumo de Água e Energia', 'Redução do consumo de energia elétrica e água nas instalações.', 'Apoio Administrativo', 0, 'zap'),
+  ('i10', 'Redução do Consumo de Energia Elétrica', 'Redução do consumo de energia elétrica nas instalações.', 'Apoio Administrativo', 0, 'zap'),
+  ('i_apoio_agua', 'Uso Sustentável da Água', 'Redução do consumo de água nas instalações.', 'Apoio Administrativo', 0, 'droplets'),
   ('i21', 'Gestão de Resíduos e Coleta Seletiva', 'Destinação adequada de resíduos e manutenção de coleta seletiva no apoio administrativo.', 'Apoio Administrativo', 0, 'recycle'),
   ('i22', 'Capacitação e Conscientização em Sustentabilidade', 'Capacitação das equipes sobre produtos e serviços mais sustentáveis.', 'Apoio Administrativo', 0, 'users'),
   ('i23', 'Saúde e Segurança do Trabalho', 'Cumprimento das exigências de saúde e segurança do trabalho.', 'Apoio Administrativo', 0, 'users'),
@@ -343,7 +344,8 @@ insert into indicadores_pdls (id, macroindicador_id, eixo_id, nome, meta, unidad
   ('pdls14', 'i20', 'eixo1', 'Percentual de redução da emissão de CO₂', 'Redução de 10%', 'percentual', '[{"id":"mv37","descricao":"Sistema de monitoramento da frota"},{"id":"mv38","descricao":"Relatórios gerenciais"},{"id":"mv39","descricao":"Registros de ocorrências"}]'::jsonb, 'OB01 – Reduzir a emissão de CO₂'),
   -- Tabela 3 — Apoio Administrativo
   ('pdls3', 'i9', 'eixo1', 'Percentual de redução de aquisição de materiais de consumo', 'Redução de 5%', 'percentual', '[{"id":"mv6","descricao":"Relatórios da contratada"},{"id":"mv7","descricao":"Registros de consumo e acompanhamento da fiscalização"}]'::jsonb, 'OB06 – Promover o uso consciente do material de consumo'),
-  ('pdls4', 'i10', 'eixo1', 'Percentual de energia elétrica consumida (kWh) e percentual de água consumida (m³)', 'Redução de 5%', 'percentual', '[{"id":"mv8","descricao":"Relatórios de consumo"},{"id":"mv9","descricao":"Registros operacionais e ações de conscientização"}]'::jsonb, 'OB02 – Promover o consumo consciente de energia elétrica; OB03 – Promover o consumo consciente de água'),
+  ('pdls4', 'i10', 'eixo1', 'Percentual de energia elétrica consumida (kWh)', 'Redução de 5%', 'percentual', '[{"id":"mv8","descricao":"Relatórios de consumo"},{"id":"mv9","descricao":"Registros operacionais e ações de conscientização"}]'::jsonb, 'OB02 – Promover o consumo consciente de energia elétrica'),
+  ('pdls_apoio_agua', 'i_apoio_agua', 'eixo1', 'Percentual de água consumida (m³)', 'Redução de 5%', 'percentual', '[{"id":"mv8a","descricao":"Relatórios de consumo"},{"id":"mv9a","descricao":"Registros operacionais e ações de conscientização"}]'::jsonb, 'OB03 – Promover o consumo consciente de água'),
   ('pdls15', 'i21', 'eixo1', 'Percentual de resíduos destinados adequadamente', 'Acréscimo de 5%', 'percentual', '[{"id":"mv40","descricao":"Registros da coleta seletiva"},{"id":"mv41","descricao":"Comprovantes de destinação"},{"id":"mv42","descricao":"Fiscalização contratual"}]'::jsonb, 'OB04 – Racionalizar a gestão de resíduos'),
   ('pdls16', 'i22', 'eixo6', 'Quantidade total de capacitações oferecidas sobre produtos e serviços sustentáveis', '2 capacitações', 'quantidade', '[{"id":"mv43","descricao":"Certificados"},{"id":"mv44","descricao":"Listas de presença"},{"id":"mv45","descricao":"Registros de treinamento"}]'::jsonb, 'OB13 – Fomentar a capacitação e conscientização na temática da sustentabilidade'),
   ('pdls17', 'i23', null, 'Cumprimento das exigências de SST', '100% de atendimento', 'conformidade', '[{"id":"mv46","descricao":"Comprovantes de treinamentos"},{"id":"mv47","descricao":"EPIs"},{"id":"mv48","descricao":"Documentação trabalhista"}]'::jsonb, 'Requisito contratual do TR'),
@@ -380,9 +382,24 @@ alter table indicadores add column if not exists impacto_coletivo boolean not nu
 -- 2) justificativa escrita da dedução manual (só preenchida nesses casos)
 alter table ocorrencias add column if not exists justificativa_deducao_manual text;
 
--- 3) Aspectos já marcados de partida — os que falam de água, energia ou resíduos
--- no consumo/geração da unidade (i7, i8, i10, i21: limpeza e apoio administrativo;
--- i12: consumo de água; i14: eficiência de equipamentos, citada como o de energia).
--- CONFIRMAR COM A VANESSA a lista final — dá pra marcar/desmarcar a qualquer
--- momento em Estrutura de Sustentabilidade → Passo 2 → "Editar este aspecto".
-update indicadores set impacto_coletivo = true where id in ('i7', 'i8', 'i10', 'i12', 'i14', 'i21');
+-- 3) Aspectos marcados como "Meta da Unidade" — lista após a revisão da Vanessa
+-- (22/10): Limpeza = Resíduos (i7) e Água (i8); Apoio Administrativo = Uso Racional
+-- de Materiais (i9), Resíduos (i21), Energia (i10) e Água (i_apoio_agua);
+-- "Eficiência dos Equipamentos" (i14) deixa de ser Meta da Unidade.
+-- i12 (Locação — água) segue como estava, aguardando a resposta da Vanessa.
+-- Dá pra marcar/desmarcar a qualquer momento em Estrutura de Sustentabilidade.
+update indicadores set impacto_coletivo = false where id = 'i14';
+update indicadores set impacto_coletivo = true where id in ('i7', 'i8', 'i9', 'i10', 'i_apoio_agua', 'i12', 'i21');
+
+-- ── Migração (22/10/2026): aspectos por contrato + registro de quem incluiu ─
+-- Seguro rodar mais de uma vez. Rode ANTES de publicar a nova versão do sistema.
+-- Aspectos de Sustentabilidade escolhidos em cada contrato (lista de ids; vazio/nulo =
+-- contrato antigo, que continua usando todos os aspectos do seu objeto).
+alter table contratos add column if not exists aspectos_ids jsonb;
+-- Quem lançou e quando (preenchido automaticamente pelo sistema).
+alter table fornecedores add column if not exists criado_por text;
+alter table fornecedores add column if not exists criado_em text;
+alter table contratos add column if not exists criado_por text;
+alter table contratos add column if not exists criado_em text;
+alter table ocorrencias add column if not exists criado_por text;
+alter table ocorrencias add column if not exists criado_em text;

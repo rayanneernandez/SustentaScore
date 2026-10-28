@@ -96,9 +96,11 @@ export default function Indicadores() {
   });
 
   /** Um contrato é considerado vinculado ao macroindicador quando o objeto contratual
-   * dele corresponde ao objeto contratual do macroindicador e o contrato está ativo. */
+   * dele inclui o aspecto na sua escolha (ou, em contrato antigo sem escolha, tem o mesmo objeto contratual) e o contrato está ativo. */
   const contratosDoIndicador = (ind: Indicador) =>
-    contratos.filter((c) => c.status === 'ativo' && c.objeto === ind.tipo);
+    contratos.filter(
+      (c) => c.status === 'ativo' && (c.aspectosIds ? c.aspectosIds.includes(ind.id) : c.objeto === ind.tipo),
+    );
 
   return (
     <div className="page">
@@ -149,8 +151,8 @@ export default function Indicadores() {
                 <div className="indicator-card-badges">
                   <span className="badge badge--outline">{capitalizarPalavras(ind.tipo)}</span>
                   {ind.impactoColetivo && (
-                    <span className="badge badge--outline badge--coletivo" title="Desempenho coletivo da unidade — não desconta pontos do fornecedor automaticamente">
-                      Desempenho coletivo
+                    <span className="badge badge--outline badge--coletivo" title="Meta da Unidade — reflete o desempenho coletivo da unidade; não desconta pontos do fornecedor automaticamente (sem desconto de IMR)">
+                      Meta da Unidade
                     </span>
                   )}
                   {totalIndicadores === 0 ? (
@@ -191,14 +193,14 @@ export default function Indicadores() {
             <p className="modal-subtitle">{detalhe.descricao}</p>
             <div className="indicator-card-badges" style={{ marginBottom: 0 }}>
               <span className="badge badge--outline">{capitalizarPalavras(detalhe.tipo)}</span>
-              {detalhe.impactoColetivo && <span className="badge badge--outline badge--coletivo">Desempenho coletivo</span>}
+              {detalhe.impactoColetivo && <span className="badge badge--outline badge--coletivo">Meta da Unidade</span>}
             </div>
             {detalhe.impactoColetivo && (
               <p className="form-hint form-hint--muted" style={{ marginTop: 8 }}>
-                Este aspecto reflete o desempenho global da unidade administrativa — influenciado também pelos servidores,
+                Este aspecto é uma <strong>Meta da Unidade</strong>: reflete o desempenho global da unidade administrativa — influenciado também pelos servidores,
                 por outros terceirizados e pelas características do prédio — e não pode ser atribuído exclusivamente a um
                 único fornecedor. As ocorrências aqui <strong>não descontam pontos automaticamente</strong>: viram
-                "Treinamento" e geram alerta de campanha de redução de recursos. A dedução manual só se aplica em situação
+                "Treinamento" e geram alerta de capacitação/campanha de otimização de recursos, sem desconto de IMR. A dedução manual só se aplica em situação
                 excepcional causada pelo fornecedor, com justificativa escrita.
               </p>
             )}

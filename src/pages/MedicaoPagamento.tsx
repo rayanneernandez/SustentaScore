@@ -5,6 +5,7 @@ import autoTable from 'jspdf-autotable';
 import { useData } from '../context/DataContext';
 import { PAGAMENTO_MINIMO_NF, SCORE_ZONA_PRETA, calcularValorAPagar, pagamentoDoScore } from '../utils/score';
 import { formatarReais, lerReais } from '../utils/moeda';
+import { gerarRelatorioMensalPDF } from '../utils/relatorioMensal';
 
 const faixas = [
   { range: '450 – 500', pct: 100, label: '100%', color: '#3D5C3E' },
@@ -74,7 +75,7 @@ function nomeArquivo(contratoNumero: string, extensao: string) {
 }
 
 export default function MedicaoPagamento() {
-  const { contratos: todosContratos, medicoes, updateMedicao, podeEditar } = useData();
+  const { contratos: todosContratos, medicoes, ocorrencias, updateMedicao, podeEditar, usuarioAtual } = useData();
   const podeEditarValorNF = podeEditar('medicao');
   // Contratos inativos não entram na medição/pagamento.
   const contratosAtivos = useMemo(
@@ -385,6 +386,14 @@ export default function MedicaoPagamento() {
                     )}
                   </div>
                 </div>
+                <button
+                  className="btn-secondary btn-secondary--sm payment-history-pdf"
+                  title={`Relatório de medição de ${m.periodo} — para anexar ao pagamento do mês`}
+                  onClick={() => gerarRelatorioMensalPDF({ contrato, medicao: m, ocorrencias, geradoPor: usuarioAtual?.nome })}
+                >
+                  <FileText size={14} />
+                  PDF do mês
+                </button>
               </div>
             );
           })}

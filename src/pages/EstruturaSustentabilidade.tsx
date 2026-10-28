@@ -536,7 +536,7 @@ export default function EstruturaSustentabilidade() {
 
           {aspectoSelecionado?.impactoColetivo && (
             <p className="form-hint form-hint--muted" style={{ marginTop: 6 }}>
-              <strong>Desempenho coletivo da unidade:</strong> as ocorrências deste aspecto não descontam pontos
+              <strong>Meta da Unidade:</strong> as ocorrências deste aspecto não descontam pontos
               automaticamente (viram "Treinamento"); só a dedução manual, com justificativa, desconta.
             </p>
           )}
@@ -577,8 +577,8 @@ export default function EstruturaSustentabilidade() {
                   onChange={(e) => setFormAspecto((p) => ({ ...p, impactoColetivo: e.target.checked }))}
                 />
                 <span>
-                  <strong>Reflete o desempenho coletivo da unidade</strong> (consumo de água, energia elétrica ou geração
-                  de resíduos) — não desconta pontos do fornecedor automaticamente; gera alerta de treinamento.
+                  <strong>Meta da Unidade</strong> — o resultado reflete o desempenho coletivo da unidade, não de um fornecedor
+                  específico. Não desconta IMR automaticamente; gera alerta de treinamento.
                 </span>
               </label>
               <button className="btn-secondary" onClick={() => { setMostrarFormAspecto(false); setEditandoAspectoId(null); }}>Cancelar</button>

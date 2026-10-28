@@ -86,6 +86,16 @@ export function periodoParaChave(periodo: string): number {
   return (Number.isFinite(ano) ? ano : 0) * 12 + mes;
 }
 
+/** Transforma "ago/26" em "2026-08" — o mesmo formato do início de `Ocorrencia.data`, pra filtrar
+ * as ocorrências de um mês. Devolve `null` se o texto não for um período válido. */
+export function periodoParaAnoMes(periodo: string): string | null {
+  const [mesStr, anoStr] = periodo.toLowerCase().split('/');
+  const mes = MESES_ABREV_ORDEM.indexOf(mesStr);
+  const ano = Number(anoStr);
+  if (mes < 0 || !Number.isFinite(ano)) return null;
+  return `${2000 + ano}-${String(mes + 1).padStart(2, '0')}`;
+}
+
 /** Períodos ("mmm/aa") que têm Medição registrada pra algum dos contratos, em ordem cronológica. */
 export function periodosComMedicao(medicoes: Medicao[], contratoIds: Set<string>): string[] {
   const periodos = new Set<string>();

@@ -36,3 +36,19 @@ export function capitalizarPalavras(texto: string): string {
     })
     .join(' ');
 }
+
+/**
+ * Texto de autoria para telas de detalhe: "Cadastrado por Maria em 28/10/2026 às 15:04".
+ * `rotulo` troca o verbo ("Cadastrado", "Lançado"...). Devolve null se não há nada para mostrar
+ * (registros antigos, anteriores ao carimbo automático).
+ */
+export function rotuloAutoria(por?: string, em?: string, rotulo = 'Cadastrado'): string | null {
+  const quando = em ? new Date(em) : null;
+  const temData = !!quando && !Number.isNaN(quando.getTime());
+  if (!por && !temData) return null;
+  const parteQuem = por ? ` por ${por}` : '';
+  const parteQuando = temData
+    ? ` em ${quando!.toLocaleDateString('pt-BR')} às ${quando!.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+    : '';
+  return `${rotulo}${parteQuem}${parteQuando}`;
+}

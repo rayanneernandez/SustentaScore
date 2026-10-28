@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useData, statusVigencia, diasParaVencimento, formatarDataBR, criarEventoHistorico, ALERTA_DIAS_PADRAO } from '../context/DataContext';
 import { TAMANHO_MAX_ANEXO, MAX_ANEXOS_POR_ENVIO, arquivosParaAnexos } from '../utils/anexos';
-import { capitalizarPalavras } from '../utils/texto';
+import { capitalizarPalavras, rotuloAutoria } from '../utils/texto';
 import { UNIDADES_ADMINISTRATIVAS } from '../config/sistema';
 import { PAGAMENTO_MINIMO_NF } from '../utils/score';
 import { formatarTelefone } from '../utils/telefone';
@@ -109,7 +109,10 @@ function ModalContrato({
   contratoParaEditar?: Contrato;
   onClose: () => void;
 }) {
-  const { addContrato, updateContrato, objetosContratuais } = useData();
+  const { addContrato, updateContrato, objetosContratuais, indicadores, podeEditar: podeEditarPagina } = useData();
+  // Quem pode mudar os aspectos de um contrato já cadastrado: o Administrador ou quem ele liberar
+  // (permissão de editar na Estrutura de Sustentabilidade, configurável em Perfis de Acesso).
+  const podeAlterarAspectos = podeEditarPagina('cadastroPdls');
   const valoresIniciais = {
     fornId: contratoParaEditar?.fornecedorId ?? fornecedorId,
     numero: contratoParaEditar?.numero ?? '',
@@ -133,6 +136,29 @@ function ModalContrato({
   const [erroArquivo, setErroArquivo] = useState('');
   const [salvando, setSalvando] = useState(false);
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  // ── Aspectos de Sustentabilidade deste contrato ──
+  const sugeridosDoObjeto = (objeto: string) => indicadores.filter((i) => i.tipo === objeto).map((i) => i.id);
+  const [aspectosIds, setAspectosIds] = useState<string[]>(
+    contratoParaEditar?.aspectosIds ?? sugeridosDoObjeto(contratoParaEditar?.objeto ?? ''),
+  );
+  const [aspectosAlterados, setAspectosAlterados] = useState(false);
+  // Contrato já cadastrado com a escolha feita: fica fixo, só quem tem permissão altera.
+  const aspectosTravados = !!contratoParaEditar && contratoParaEditar.aspectosIds !== undefined && !podeAlterarAspectos;
+  const escolherObjeto = (objeto: string) => {
+    set('objeto', objeto);
+    if (!aspectosTravados) {
+      setAspectosIds(sugeridosDoObjeto(objeto));
+      setAspectosAlterados(true);
+    }
+  };
+  const alternarAspecto = (id: string) => {
+    setAspectosIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setAspectosAlterados(true);
+  };
+  const aspectosDoObjetoForm = indicadores.filter((i) => i.tipo === form.objeto);
+  const aspectosDeOutrosObjetos = indicadores.filter((i) => i.tipo !== form.objeto);
+  const semAspectos = !aspectosTravados && aspectosIds.length === 0;
 
   const fornSelecionado = fornecedores.find((f) => f.id === form.fornId);
 
@@ -160,7 +186,7 @@ function ModalContrato({
   };
 
   const handleSave = async () => {
-    if (!form.numero || !form.fornId) return;
+    if (!form.numero || !form.fornId || semAspectos) return;
     setSalvando(true);
 
     if (contratoParaEditar) {
@@ -184,11 +210,18 @@ function ModalContrato({
         gestorSubstituto: form.gestorSubstituto,
         preposto: form.preposto,
         observacao: form.observacao,
+        // Só grava a escolha de aspectos quando ela foi mexida (e permitida): contrato antigo,
+        // sem escolha, continua usando todos os aspectos até alguém definir.
+        ...(aspectosAlterados && !aspectosTravados ? { aspectosIds } : {}),
       };
-      if (camposAlterados.length > 0) {
+      const mudouAspectos = aspectosAlterados && !aspectosTravados;
+      if (camposAlterados.length > 0 || mudouAspectos) {
         updateContrato(contratoParaEditar.id, patch, {
           tipo: 'edicao',
-          descricao: `Dados do contrato atualizados: ${camposAlterados.map((k) => CAMPO_CONTRATO_LABEL[k]).join(', ')}.`,
+          descricao: `Dados do contrato atualizados: ${[
+            ...camposAlterados.map((k) => CAMPO_CONTRATO_LABEL[k]),
+            ...(mudouAspectos ? ['Aspectos de Sustentabilidade'] : []),
+          ].join(', ')}.`,
         });
       }
       setSalvando(false);
@@ -197,7 +230,7 @@ function ModalContrato({
     }
 
     const historico = [
-      criarEventoHistorico('criacao', `Contrato cadastrado (${form.tipo}).`),
+      criarEventoHistorico('criacao', `Contrato cadastrado (${form.tipo}) com ${aspectosIds.length} aspecto${aspectosIds.length !== 1 ? 's' : ''} de sustentabilidade.`),
     ];
 
     let anexos: Anexo[] = [];
@@ -234,6 +267,7 @@ function ModalContrato({
       gestorSubstituto: form.gestorSubstituto,
       preposto: form.preposto,
       observacao: form.observacao,
+      aspectosIds,
       score: 500,
       faixa: 'verde',
       pagamento: 100,
@@ -274,7 +308,7 @@ function ModalContrato({
           {/* Objeto */}
           <div className="form-group">
             <label className="form-label">Objeto *</label>
-            <select className="form-input" value={form.objeto} onChange={(e) => set('objeto', e.target.value)}>
+            <select className="form-input" value={form.objeto} onChange={(e) => escolherObjeto(e.target.value)}>
               <option value="">Selecione</option>
               {objetosContratuais.map((o) => (
                 <option key={o} value={o}>{capitalizarPalavras(o)}</option>
@@ -417,6 +451,70 @@ function ModalContrato({
             <input className="form-input" placeholder="Representante da empresa responsável por este contrato" value={form.preposto} onChange={(e) => set('preposto', e.target.value)} />
           </div>
 
+          {/* Aspectos de Sustentabilidade deste contrato */}
+          <div className="form-group form-group--full">
+            <label className="form-label">Aspectos de Sustentabilidade deste contrato *</label>
+            {!form.objeto ? (
+              <p className="form-hint form-hint--muted">Escolha o objeto acima para ver os aspectos sugeridos.</p>
+            ) : aspectosTravados ? (
+              <>
+                <div className="aspectos-contrato-lista">
+                  {aspectosIds.map((id) => {
+                    const ind = indicadores.find((i) => i.id === id);
+                    return (
+                      <span key={id} className="badge badge--outline">
+                        {ind ? capitalizarPalavras(ind.nome) : id}
+                      </span>
+                    );
+                  })}
+                </div>
+                <p className="form-hint form-hint--muted">
+                  Escolhidos no cadastro e fixos desde então (valem mesmo nas prorrogações). Só quem tem permissão para editar a
+                  Estrutura de Sustentabilidade pode alterar.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="form-hint form-hint--muted" style={{ marginTop: 0 }}>
+                  Os aspectos do objeto vêm sugeridos. Desmarque os que o edital deste contrato não prevê. Depois de salvo, a
+                  escolha fica fixa{contratoParaEditar ? '' : ' (só o Administrador, ou quem ele liberar, altera)'}.
+                </p>
+                <div className="aspectos-contrato-grid">
+                  {aspectosDoObjetoForm.length === 0 && (
+                    <p className="empty-state-sm">Nenhum aspecto cadastrado para este objeto.</p>
+                  )}
+                  {aspectosDoObjetoForm.map((ind) => (
+                    <label key={ind.id} className="aspecto-contrato-item">
+                      <input type="checkbox" checked={aspectosIds.includes(ind.id)} onChange={() => alternarAspecto(ind.id)} />
+                      <span>{capitalizarPalavras(ind.nome)}</span>
+                      {ind.impactoColetivo && <span className="badge badge--outline badge--coletivo">Meta da Unidade</span>}
+                    </label>
+                  ))}
+                </div>
+                {aspectosDeOutrosObjetos.length > 0 && (
+                  <details className="aspectos-contrato-outros">
+                    <summary>Incluir aspecto de outro objeto contratual</summary>
+                    <div className="aspectos-contrato-grid">
+                      {aspectosDeOutrosObjetos.map((ind) => (
+                        <label key={ind.id} className="aspecto-contrato-item">
+                          <input type="checkbox" checked={aspectosIds.includes(ind.id)} onChange={() => alternarAspecto(ind.id)} />
+                          <span>
+                            {capitalizarPalavras(ind.nome)}
+                            <span className="text-muted"> · {capitalizarPalavras(ind.tipo)}</span>
+                          </span>
+                          {ind.impactoColetivo && <span className="badge badge--outline badge--coletivo">Meta da Unidade</span>}
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                )}
+                {semAspectos && (
+                  <span className="form-hint form-hint--danger">Marque pelo menos um aspecto de sustentabilidade.</span>
+                )}
+              </>
+            )}
+          </div>
+
           {/* Observação */}
           <div className="form-group form-group--full">
             <label className="form-label">Observação</label>
@@ -426,7 +524,7 @@ function ModalContrato({
         </div>
         <div className="modal-actions">
           <button className="btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn-primary" onClick={handleSave} disabled={salvando}>
+          <button className="btn-primary" onClick={handleSave} disabled={salvando || semAspectos}>
             {salvando ? 'Salvando...' : contratoParaEditar ? 'Salvar alterações' : 'Cadastrar'}
           </button>
         </div>
@@ -482,7 +580,7 @@ function ModalDetalheContrato({
   onClose: () => void;
   onEditar: (c: Contrato) => void;
 }) {
-  const { updateContrato, medicoes, podeEditar: podeEditarPagina, podeExcluir: podeExcluirPagina } = useData();
+  const { updateContrato, medicoes, indicadores, podeEditar: podeEditarPagina, podeExcluir: podeExcluirPagina } = useData();
   const podeEditar = podeEditarPagina('cadastro');
   const podeExcluir = podeExcluirPagina('cadastro');
   const [mostrarProrrogacao, setMostrarProrrogacao] = useState(false);
@@ -586,6 +684,9 @@ function ModalDetalheContrato({
           <div>
             <h2 className="modal-title">{contrato.numero}</h2>
             <p className="modal-subtitle" style={{ margin: '2px 0 0' }}>{contrato.fornecedorNome} · {contrato.objeto ? capitalizarPalavras(contrato.objeto) : contrato.objeto}</p>
+            {rotuloAutoria(contrato.criadoPor, contrato.criadoEm) && (
+              <p className="autoria-linha">{rotuloAutoria(contrato.criadoPor, contrato.criadoEm)}</p>
+            )}
           </div>
           <div className="detail-block-row" style={{ flexWrap: 'nowrap' }}>
             {podeEditar && (
@@ -740,6 +841,30 @@ function ModalDetalheContrato({
           </div>
         )}
 
+        {/* Aspectos de Sustentabilidade do contrato */}
+        <div className="detail-block">
+          <p className="form-section-title" style={{ marginTop: 0 }}>Aspectos de Sustentabilidade do contrato</p>
+          {contrato.aspectosIds === undefined ? (
+            <p className="form-hint form-hint--muted">
+              Contrato anterior à escolha de aspectos: vale todos os aspectos do objeto. Edite o contrato para definir quais se aplicam.
+            </p>
+          ) : contrato.aspectosIds.length === 0 ? (
+            <p className="empty-state-sm">Nenhum aspecto selecionado.</p>
+          ) : (
+            <div className="aspectos-contrato-lista">
+              {contrato.aspectosIds.map((id) => {
+                const ind = indicadores.find((i) => i.id === id);
+                return (
+                  <span key={id} className="badge badge--outline">
+                    {ind ? capitalizarPalavras(ind.nome) : id}
+                    {ind?.impactoColetivo ? ' · Meta da Unidade' : ''}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Histórico */}
         <div className="detail-block">
           <p className="form-section-title" style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -756,6 +881,7 @@ function ModalDetalheContrato({
                   <p className="historico-desc">{ev.descricao}</p>
                   <p className="historico-data">
                     {new Date(ev.data).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                    {ev.autor ? ` · por ${ev.autor}` : ''}
                   </p>
                 </div>
               </div>
@@ -835,6 +961,9 @@ function FornecedorCard({
               <span className="text-muted"> · {contratosInativos.length} inativo{contratosInativos.length !== 1 ? 's' : ''}</span>
             )}
           </div>
+          {rotuloAutoria(fornecedor.criadoPor, fornecedor.criadoEm) && (
+            <div className="autoria-linha">{rotuloAutoria(fornecedor.criadoPor, fornecedor.criadoEm)}</div>
+          )}
           {(fornecedor.telefone || fornecedor.endereco) && (
             <div className="supplier-card-contato">
               {fornecedor.telefone && (

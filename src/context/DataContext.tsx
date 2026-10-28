@@ -247,8 +247,8 @@ function gerarNotificacoesTreinamento(
     .map((o) => ({
       id: `treinamento:${o.id}`,
       tipo: 'treinamento',
-      titulo: `Campanha de treinamento recomendada — ${o.indicadorNome ?? 'aspecto coletivo'}`,
-      descricao: `${o.fornecedorNome}: ${o.descricao} (${formatarDataBR(o.data)}). Reflete o desempenho coletivo da unidade — sem dedução de pontos.`,
+      titulo: `Campanha de treinamento recomendada — ${o.indicadorNome ?? 'Meta da Unidade'}`,
+      descricao: `${o.fornecedorNome}: ${o.descricao} (${formatarDataBR(o.data)}). Meta da Unidade — sem desconto de IMR.`,
       urgencia: 'media' as const,
       link: '/ocorrencias',
     }));
@@ -393,7 +393,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Fornecedores ────────────────────────────────────────────────
-  const addFornecedor = (f: Fornecedor) => {
+  /** Carimbo automático de autoria: quem (usuário logado) e quando — só preenche o que ainda não veio. */
+  const carimboAutoria = () => ({ criadoPor: usuarioAtual?.nome, criadoEm: new Date().toISOString() });
+
+  const addFornecedor = (fornecedor: Fornecedor) => {
+    const f: Fornecedor = { ...carimboAutoria(), ...fornecedor };
     setDados((prev) => (prev ? { ...prev, fornecedores: [...prev.fornecedores, f] } : prev));
     sincronizar(dbFornecedores.inserir(f), `novo fornecedor ${f.nome}`);
   };
@@ -418,10 +422,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
 
   const addContrato = (c: Contrato) => {
+    const autor = usuarioAtual?.nome;
+    const eventos = c.historico?.length ? c.historico : [novoEvento('criacao', 'Contrato cadastrado no sistema.')];
     const contratoComHistorico: Contrato = {
+      ...carimboAutoria(),
       ...c,
       alertaDiasAntes: c.alertaDiasAntes ?? ALERTA_DIAS_PADRAO,
-      historico: c.historico?.length ? c.historico : [novoEvento('criacao', 'Contrato cadastrado no sistema.')],
+      historico: eventos.map((ev) => (ev.autor || !autor ? ev : { ...ev, autor })),
     };
     setDados((prev) =>
       prev
@@ -452,7 +459,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ...prev,
         contratos: prev.contratos.map((c) => {
           if (c.id !== id) return c;
-          const historico = evento ? [...(c.historico ?? []), novoEvento(evento.tipo, evento.descricao)] : c.historico;
+          const historico = evento
+            ? [...(c.historico ?? []), { ...novoEvento(evento.tipo, evento.descricao), autor: usuarioAtual?.nome }]
+            : c.historico;
           historicoNovo = historico;
           return { ...c, ...patch, historico };
         }),
@@ -502,7 +511,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     sincronizar(dbMedicoes.atualizar(id, patch), `editar medição ${id}`);
   };
 
-  const addOcorrencia = (o: Ocorrencia) => {
+  const addOcorrencia = (ocorrencia: Ocorrencia) => {
+    const o: Ocorrencia = { ...carimboAutoria(), ...ocorrencia };
     setDados((prev) => (prev ? { ...prev, ocorrencias: [o, ...prev.ocorrencias] } : prev));
     sincronizar(dbOcorrencias.inserir(o), `nova ocorrência ${o.id}`);
 

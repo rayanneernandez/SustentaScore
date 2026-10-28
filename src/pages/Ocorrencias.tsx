@@ -5,6 +5,7 @@ import {
   Upload, Paperclip, Link2, GraduationCap, ExternalLink,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
+import { capitalizarPalavras, rotuloAutoria } from '../utils/texto';
 import { TAMANHO_MAX_ANEXO, MAX_ANEXOS_POR_ENVIO, arquivosParaAnexos } from '../utils/anexos';
 import type { Ocorrencia, TipoRegistroOcorrencia } from '../types';
 
@@ -72,8 +73,13 @@ export default function Ocorrencias() {
   });
 
   const contratosDoFornecedorSelecionado = contratos.filter((c) => c.fornecedorId === form.fornecedorId);
-  const eixosDoAspectoDoForm = eixosDoAspecto(form.indicadorId);
   const contratoSelecionado = contratos.find((c) => c.id === form.contratoId);
+  // Aspectos que valem para o contrato escolhido (definidos no cadastro do contrato). Contrato antigo,
+  // sem essa escolha, continua oferecendo todos os aspectos, como sempre foi.
+  const aspectosDoContrato = contratoSelecionado?.aspectosIds
+    ? indicadores.filter((i) => contratoSelecionado.aspectosIds!.includes(i.id))
+    : indicadores;
+  const eixosDoAspectoDoForm = eixosDoAspecto(form.indicadorId);
   /** O Aspecto escolhido reflete o desempenho coletivo da unidade (água, energia, resíduos)?
    * Se sim, o registro NÃO desconta pontos por padrão (vira Treinamento + alerta). */
   const aspectoColetivo = !!indicadores.find((i) => i.id === form.indicadorId)?.impactoColetivo;
@@ -246,6 +252,12 @@ export default function Ocorrencias() {
                         <span className="detail-label">Registrado por</span>
                         <span className="detail-value">{o.registradoPor || '—'}</span>
                       </div>
+                      {rotuloAutoria(o.criadoPor, o.criadoEm, 'Lançado no sistema') && (
+                        <div>
+                          <span className="detail-label">Lançado no sistema</span>
+                          <span className="detail-value">{rotuloAutoria(o.criadoPor, o.criadoEm, 'Lançado no sistema')?.replace('Lançado no sistema ', '')}</span>
+                        </div>
+                      )}
                       <div>
                         <span className="detail-label">{treinamento ? 'Dedução' : 'Dedução aplicada'}</span>
                         {treinamento ? (
@@ -306,12 +318,12 @@ export default function Ocorrencias() {
                 <div className="trava-coletivo" role="note">
                   <GraduationCap size={16} />
                   <div>
-                    <strong>Aspecto de desempenho coletivo da unidade — sem dedução automática</strong>
+                    <strong>Meta da Unidade — sem desconto de IMR</strong>
                     <span>
-                      Consumo de água, energia elétrica e geração de resíduos refletem o desempenho global da unidade
+                      Este aspecto é uma meta da unidade: o resultado reflete o desempenho global da unidade
                       administrativa (servidores, outros terceirizados e características do prédio também influenciam), e não
                       a atuação de um único fornecedor. Por isso este registro entra como <strong>Treinamento</strong>: gera o
-                      alerta de campanha de redução de recursos, sem descontar pontos do score.
+                      alerta de capacitação e treinamento dos funcionários do contrato, sem descontar pontos do score.
                     </span>
                   </div>
                 </div>
@@ -397,7 +409,19 @@ export default function Ocorrencias() {
               <select
                 className="form-input"
                 value={form.contratoId}
-                onChange={(e) => setForm({ ...form, contratoId: e.target.value })}
+                onChange={(e) => {
+                  const novoContrato = contratos.find((c) => c.id === e.target.value);
+                  const permitidos = novoContrato?.aspectosIds;
+                  // Trocou de contrato e o aspecto já escolhido não vale para o novo: limpa a escolha
+                  // (e a trava de Meta da Unidade que dependia dela).
+                  const perdeAspecto = !!form.indicadorId && !!permitidos && !permitidos.includes(form.indicadorId);
+                  setErroJustificativa(false);
+                  setForm((p) =>
+                    perdeAspecto
+                      ? { ...p, contratoId: e.target.value, indicadorId: '', eixoPDLSId: '', ...(aspectoColetivo ? { tipoRegistro: 'ocorrencia' as TipoRegistroOcorrencia, deducao: 25, deducaoManual: false, justificativa: '' } : {}) }
+                      : { ...p, contratoId: e.target.value },
+                  );
+                }}
                 disabled={!form.fornecedorId}
               >
                 <option value="">Selecione...</option>
@@ -410,6 +434,7 @@ export default function Ocorrencias() {
               <label className="form-label">Aspecto de Sustentabilidade</label>
               <select
                 className="form-input"
+                disabled={!form.contratoId}
                 value={form.indicadorId}
                 onChange={(e) => {
                   const novoIndicadorId = e.target.value;
@@ -427,9 +452,14 @@ export default function Ocorrencias() {
                   });
                 }}
               >
-                <option value="">Selecione...</option>
-                {indicadores.map((i) => <option key={i.id} value={i.id}>{i.nome}</option>)}
+                <option value="">{form.contratoId ? 'Selecione...' : 'Escolha o contrato primeiro'}</option>
+                {aspectosDoContrato.map((i) => <option key={i.id} value={i.id}>{capitalizarPalavras(i.nome)}</option>)}
               </select>
+              {contratoSelecionado?.aspectosIds && (
+                <span className="form-hint form-hint--muted">
+                  Só aparecem os aspectos definidos no cadastro deste contrato.
+                </span>
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Eixo PDLS{eixosDoAspectoDoForm.length > 0 ? ' *' : ''}</label>

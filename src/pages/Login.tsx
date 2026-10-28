@@ -276,8 +276,7 @@ export default function Login() {
         </div>
 
         <div className="login-info-box">
-          <p className="login-hint-title">Acesso de teste (pode editar/excluir em Usuários depois de entrar):</p>
-          <p>Administrador — admin@sustentascore.br / admin123</p>
+          <p className="login-hint-title">Acesso de teste:</p>
           <p>Colaborador — colaborador@sustentascore.br / colab123</p>
         </div>
       </div>

@@ -10,6 +10,9 @@ export interface Fornecedor {
   endereco?: string;
   telefone?: string;
   observacao?: string;
+  /** Quem cadastrou (nome do usuário logado) e quando (ISO 8601) — preenchidos automaticamente. */
+  criadoPor?: string;
+  criadoEm?: string;
 }
 
 export type HistoricoTipo =
@@ -26,6 +29,8 @@ export interface HistoricoEvento {
   data: string; // ISO datetime
   tipo: HistoricoTipo;
   descricao: string;
+  /** Usuário logado que gerou o evento (preenchido automaticamente). */
+  autor?: string;
 }
 
 export interface Anexo {
@@ -72,6 +77,18 @@ export interface Contrato {
   alertaDiasAntes?: number;
   /** Linha do tempo completa do contrato: criação, edições, prorrogações, anexos, status */
   historico?: HistoricoEvento[];
+  /**
+   * Ids dos Aspectos de Sustentabilidade que valem para ESTE contrato, escolhidos no
+   * cadastro. Os aspectos do objeto contratual vêm como sugestão, mas um contrato pode
+   * ter menos (o edital não exige todos) ou incluir aspecto de outro objeto. Fica fixo
+   * depois de salvo (mesmo nas prorrogações); só quem tem permissão de editar a
+   * Estrutura de Sustentabilidade altera. `undefined` = contrato antigo, anterior a esta
+   * escolha: usa todos os aspectos, como sempre foi.
+   */
+  aspectosIds?: string[];
+  /** Quem cadastrou (nome do usuário logado) e quando (ISO 8601) — preenchidos automaticamente. */
+  criadoPor?: string;
+  criadoEm?: string;
 }
 
 export interface Indicador {
@@ -197,6 +214,9 @@ export interface Ocorrencia {
   tipoRegistro?: TipoRegistroOcorrencia;
   /** Fiscal responsável pelo registro (quem constatou/relatou). */
   registradoPor?: string;
+  /** Usuário logado que lançou o registro e quando (ISO 8601) — automático, diferente de `registradoPor` (quem relatou). */
+  criadoPor?: string;
+  criadoEm?: string;
   /** Link de referência — ex: material de treinamento, norma, procedimento. */
   link?: string;
   /** Arquivos anexados ao registro — ex: certificado de participação, material do treinamento. */
