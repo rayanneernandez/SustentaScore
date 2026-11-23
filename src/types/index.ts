@@ -10,6 +10,8 @@ export interface Fornecedor {
   endereco?: string;
   telefone?: string;
   observacao?: string;
+  /** Documentos do fornecedor (ex: contrato social, certidões) — opcional. */
+  anexos?: Anexo[];
   /** Quem cadastrou (nome do usuário logado) e quando (ISO 8601) — preenchidos automaticamente. */
   criadoPor?: string;
   criadoEm?: string;
@@ -268,8 +270,10 @@ export interface Notificacao {
  * para a grade de permissões na tela de Usuários e Permissões.
  */
 export type PaginaKey =
+  | 'logs'
   | 'dashboard'
   | 'cadastro'
+  | 'contratos'
   | 'indicadores'
   | 'cadastroPdls'
   | 'ocorrencias'
@@ -329,4 +333,27 @@ export interface Usuario {
   cargo?: string;
   /** Id do `Perfil` que define o que este usuário pode ver e editar. */
   perfilId: string;
+  /** Contratos que este usuário acompanha. Vazio/ausente = vê todos os contratos (comportamento
+   * normal). Com contratos marcados, ele só enxerga esses contratos, os fornecedores deles e as
+   * ocorrências/medições/score deles. O Administrador nunca é limitado por isso. */
+  contratosPermitidos?: string[];
+}
+
+/** Tipo de ação registrada na tela de Logs. */
+export type AcaoLog = 'criou' | 'editou' | 'excluiu' | 'entrou' | 'saiu';
+
+/** Uma linha do histórico de atividades do sistema (quem fez o quê, e quando). */
+export interface LogAtividade {
+  id: string;
+  usuarioId?: string;
+  usuarioNome: string;
+  acao: AcaoLog;
+  /** Tela/tipo de registro afetado — ex: "Fornecedor", "Contrato", "Ocorrência". */
+  entidade: string;
+  entidadeId?: string;
+  descricao: string;
+  /** Para edições: o que mudou (campo, valor antigo e novo). */
+  detalhes?: { campo: string; de?: string; para?: string }[];
+  /** Data/hora (ISO 8601). */
+  criadoEm: string;
 }

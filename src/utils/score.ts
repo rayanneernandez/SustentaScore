@@ -127,6 +127,116 @@ export function rotuloMesAtual(): string {
   return `${MESES_ABREV_ORDEM[agora.getMonth()]}/${String(agora.getFullYear()).slice(-2)}`;
 }
 
+/** "mmm/aa" de um mês no formato "YYYY-MM" (ex: "2026-10" → "out/26"). */
+export function rotuloDoAnoMes(anoMes: string): string {
+  const [ano, mes] = anoMes.split('-');
+  return `${MESES_ABREV_ORDEM[Number(mes) - 1] ?? mes}/${(ano ?? '').slice(-2)}`;
+}
+
+/** Hoje no formato "YYYY-MM-DD" (horário local) — limite máximo da data de uma ocorrência. */
+export function hojeISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Aplica uma Ocorrência com dedução ao score de um mês que NÃO é o corrente (a data informada pelo
+ * fiscal manda: a dedução cai no mês da data da ocorrência, não no mês em que ela foi lançada).
+ * - Se o contrato já tem Medição daquele mês: tira os pontos da nota que já está lá.
+ * - Se não tem: cria a Medição do mês partindo de 500 e descontando todas as ocorrências do contrato naquele mês.
+ * O score nunca fica abaixo de 0 nem acima de 500.
+ */
+export function aplicarOcorrenciaEmMesPassado(
+  contratoId: string,
+  anoMes: string,
+  deducao: number,
+  ocorrenciasDoContratoNoMes: Ocorrencia[],
+  medicoesExistentes: Medicao[],
+): { nova: true; medicaoCompleta: Medicao } | { nova: false; id: string; patch: Partial<Medicao> } {
+  const periodo = rotuloDoAnoMes(anoMes);
+  const existente = medicoesExistentes.find((m) => m.contratoId === contratoId && m.periodo === periodo);
+  if (existente) {
+    const score = Math.max(0, Math.min(SCORE_INICIAL_MES, existente.score - deducao));
+    const faixa = faixaDoScore(score);
+    return {
+      nova: false,
+      id: existente.id,
+      patch: {
+        score,
+        ocorrencias: existente.ocorrencias + 1,
+        pagamento: pagamentoDaFaixa(faixa),
+        // Respeita o status que a usuária já definiu (ex: "pendente"); só passa a bloqueado ao cair na Zona Preta.
+        status: faixa === 'preto' ? 'bloqueado' : existente.status,
+      },
+    };
+  }
+  const total = ocorrenciasDoContratoNoMes.reduce((soma, o) => soma + (o.deducao || 0), 0);
+  const score = Math.max(0, Math.min(SCORE_INICIAL_MES, SCORE_INICIAL_MES - total));
+  const faixa = faixaDoScore(score);
+  const id = `mes-${contratoId}-${periodo.replace('/', '')}`;
+  return {
+    nova: true,
+    medicaoCompleta: {
+      id,
+      contratoId,
+      periodo,
+      score,
+      ocorrencias: ocorrenciasDoContratoNoMes.length,
+      pagamento: pagamentoDaFaixa(faixa),
+      valor: 0,
+      status: faixa === 'preto' ? 'bloqueado' : 'liberado',
+    },
+  };
+}
+
+/**
+ * Medições dos meses ANTERIORES ao corrente que um contrato ativo ainda não tem, desde o mês do início da vigência
+ * (até o mês do fim da vigência, se ele já passou). Cada mês nasce com 500 pontos (100% de pagamento), descontando
+ * as ocorrências com dedução já registradas pro contrato naquele mês — assim dá para lançar ocorrências e o valor
+ * da nota nos meses passados de um contrato que começou antes de ser cadastrado no sistema.
+ * O mês corrente continua sendo tratado por `prepararMedicaoMesAtual`.
+ */
+export function medicoesDosMesesAnteriores(
+  contrato: { id: string; vigenciaInicio?: string; vigenciaFim?: string },
+  medicoesExistentes: Medicao[],
+  ocorrencias: Ocorrencia[],
+): Medicao[] {
+  const inicio = (contrato.vigenciaInicio ?? '').slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(inicio)) return [];
+  const atual = anoMesAtual();
+  const fim = (contrato.vigenciaFim ?? '').slice(0, 7);
+  const novas: Medicao[] = [];
+  let [ano, mes] = inicio.split('-').map(Number);
+  // Trava de segurança: no máximo 10 anos de histórico automático.
+  for (let i = 0; i < 120; i++) {
+    const anoMes = `${ano}-${String(mes).padStart(2, '0')}`;
+    if (anoMes >= atual) break;
+    if (/^\d{4}-\d{2}$/.test(fim) && anoMes > fim) break;
+    const periodo = rotuloDoAnoMes(anoMes);
+    if (!medicoesExistentes.some((m) => m.contratoId === contrato.id && m.periodo === periodo)) {
+      const doMes = ocorrencias.filter(
+        (o) => o.contratoId === contrato.id && o.tipoRegistro !== 'treinamento' && (o.data || '').startsWith(anoMes),
+      );
+      const total = doMes.reduce((soma, o) => soma + (o.deducao || 0), 0);
+      const score = Math.max(0, Math.min(SCORE_INICIAL_MES, SCORE_INICIAL_MES - total));
+      const faixa = faixaDoScore(score);
+      novas.push({
+        id: `mes-${contrato.id}-${periodo.replace('/', '')}`,
+        contratoId: contrato.id,
+        periodo,
+        score,
+        ocorrencias: doMes.length,
+        pagamento: pagamentoDaFaixa(faixa),
+        valor: 0,
+        status: faixa === 'preto' ? 'bloqueado' : 'liberado',
+      });
+    }
+    mes += 1;
+    if (mes > 12) { mes = 1; ano += 1; }
+  }
+  return novas;
+}
+
 export interface ScoreMesAtual {
   score: number;
   faixa: ScoreFaixa;

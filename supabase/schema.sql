@@ -64,7 +64,8 @@ create table if not exists fornecedores (
   endereco text,
   telefone text,
   preposto text,
-  observacao text
+  observacao text,
+  anexos jsonb default '[]'::jsonb
 );
 
 create table if not exists contratos (
@@ -178,6 +179,20 @@ create table if not exists notificacoes_lidas (
   lida_em timestamptz not null default now()
 );
 
+-- Histórico de atividades (aba Logs): quem criou, editou ou excluiu o quê, e quando.
+create table if not exists logs (
+  id text primary key,
+  usuario_id text,
+  usuario_nome text,
+  acao text not null,
+  entidade text not null,
+  entidade_id text,
+  descricao text not null,
+  detalhes jsonb,
+  criado_em timestamptz not null default now()
+);
+create index if not exists logs_criado_em_idx on logs (criado_em desc);
+
 -- ── 2) RLS — política aberta (ver aviso de segurança no topo do arquivo) ───
 
 alter table perfis enable row level security;
@@ -192,6 +207,7 @@ alter table ocorrencias enable row level security;
 alter table medicoes enable row level security;
 alter table score_historico enable row level security;
 alter table notificacoes_lidas enable row level security;
+alter table logs enable row level security;
 
 do $$
 declare
@@ -200,7 +216,7 @@ begin
   foreach tabela in array array[
     'perfis','usuarios','objetos_contratuais','fornecedores','contratos',
     'eixos_pdls','indicadores','indicadores_pdls','ocorrencias','medicoes',
-    'score_historico','notificacoes_lidas'
+    'score_historico','notificacoes_lidas','logs'
   ]
   loop
     execute format('drop policy if exists "acesso_total_anon" on %I;', tabela);
@@ -220,6 +236,7 @@ end $$;
 insert into perfis (id, nome, padrao, permissoes) values
   ('perfil-administrador', 'Administrador', true, '{
     "cadastro": {"ver": true, "criar": true, "editar": true, "excluir": true},
+    "contratos": {"ver": true, "criar": true, "editar": true, "excluir": true},
     "indicadores": {"ver": true, "criar": true, "editar": true, "excluir": true},
     "cadastroPdls": {"ver": true, "criar": true, "editar": true, "excluir": true},
     "ocorrencias": {"ver": true, "criar": true, "editar": true, "excluir": true},
@@ -227,10 +244,12 @@ insert into perfis (id, nome, padrao, permissoes) values
     "medicao": {"ver": true, "criar": true, "editar": true, "excluir": true},
     "dashboard": {"ver": true, "criar": true, "editar": true, "excluir": true},
     "usuarios": {"ver": true, "criar": true, "editar": true, "excluir": true},
-    "perfis": {"ver": true, "criar": true, "editar": true, "excluir": true}
+    "perfis": {"ver": true, "criar": true, "editar": true, "excluir": true},
+    "logs": {"ver": true, "criar": true, "editar": true, "excluir": true}
   }'::jsonb),
   ('perfil-colaborador', 'Colaborador', true, '{
     "cadastro": {"ver": true, "criar": false, "editar": false, "excluir": false},
+    "contratos": {"ver": true, "criar": false, "editar": false, "excluir": false},
     "indicadores": {"ver": true, "criar": false, "editar": false, "excluir": false},
     "cadastroPdls": {"ver": false, "criar": false, "editar": false, "excluir": false},
     "ocorrencias": {"ver": true, "criar": false, "editar": false, "excluir": false},
@@ -238,7 +257,8 @@ insert into perfis (id, nome, padrao, permissoes) values
     "medicao": {"ver": true, "criar": false, "editar": false, "excluir": false},
     "dashboard": {"ver": true, "criar": false, "editar": false, "excluir": false},
     "usuarios": {"ver": false, "criar": false, "editar": false, "excluir": false},
-    "perfis": {"ver": false, "criar": false, "editar": false, "excluir": false}
+    "perfis": {"ver": false, "criar": false, "editar": false, "excluir": false},
+    "logs": {"ver": false, "criar": false, "editar": false, "excluir": false}
   }'::jsonb)
 on conflict (id) do nothing;
 
@@ -313,8 +333,8 @@ insert into indicadores (id, nome, descricao, tipo, contratos_vinculados, icone)
   ('i20', 'Monitoramento da Performance e Segurança Operacional', 'Monitoramento contínuo da performance e da segurança operacional da frota.', 'Locação de veículos', 0, 'wind'),
   -- Tabela 3 — Apoio Administrativo
   ('i9', 'Uso Racional de Materiais', 'Redução da aquisição de materiais de consumo administrativo.', 'Apoio Administrativo', 0, 'leaf'),
-  ('i10', 'Redução do Consumo de Energia Elétrica', 'Redução do consumo de energia elétrica nas instalações.', 'Apoio Administrativo', 0, 'zap'),
-  ('i_apoio_agua', 'Uso Sustentável da Água', 'Redução do consumo de água nas instalações.', 'Apoio Administrativo', 0, 'droplets'),
+  ('i10', 'Redução do Consumo de Energia Elétrica', 'Redução do consumo de energia elétrica em relação ao ano anterior.', 'Apoio Administrativo', 0, 'zap'),
+  ('i_apoio_agua', 'Uso Sustentável da Água', 'Redução do consumo de água em relação ao ano anterior.', 'Apoio Administrativo', 0, 'droplets'),
   ('i21', 'Gestão de Resíduos e Coleta Seletiva', 'Destinação adequada de resíduos e manutenção de coleta seletiva no apoio administrativo.', 'Apoio Administrativo', 0, 'recycle'),
   ('i22', 'Capacitação e Conscientização em Sustentabilidade', 'Capacitação das equipes sobre produtos e serviços mais sustentáveis.', 'Apoio Administrativo', 0, 'users'),
   ('i23', 'Saúde e Segurança do Trabalho', 'Cumprimento das exigências de saúde e segurança do trabalho.', 'Apoio Administrativo', 0, 'users'),
@@ -336,7 +356,7 @@ insert into indicadores_pdls (id, macroindicador_id, eixo_id, nome, meta, unidad
   ('pdls9', 'i15', 'eixo6', 'Quantidade total de capacitações oferecidas sobre produtos e serviços sustentáveis', '2 capacitações', 'quantidade', '[{"id":"mv21","descricao":"Certificados"},{"id":"mv22","descricao":"Listas de presença"},{"id":"mv23","descricao":"Registros de treinamento"}]'::jsonb, 'OB13 – Fomentar a capacitação e conscientização na temática da sustentabilidade'),
   -- Tabela 2 — Locação de veículos
   ('pdls10', 'i16', 'eixo1', 'Percentual de redução da emissão de CO₂', 'Redução de 10%', 'percentual', '[{"id":"mv24","descricao":"Relatórios de abastecimento"},{"id":"mv25","descricao":"Relatórios de emissão"},{"id":"mv26","descricao":"Controle de rotas"}]'::jsonb, 'OB01 – Reduzir a emissão de CO₂'),
-  ('pdls11', 'i17', 'eixo1', 'Percentual de energia elétrica consumida (kWh)', 'Redução de 5%', 'percentual', '[{"id":"mv27","descricao":"ENCE dos veículos e pneus"},{"id":"mv28","descricao":"CRLV"},{"id":"mv29","descricao":"Fichas técnicas"},{"id":"mv30","descricao":"Inventário da frota"}]'::jsonb, 'OB02 – Promover o consumo consciente de energia'),
+  ('pdls11', 'i17', 'eixo1', 'Percentual de energia elétrica consumida (kWh) em relação ao ano anterior', 'Redução de 5%', 'percentual', '[{"id":"mv27","descricao":"ENCE dos veículos e pneus"},{"id":"mv28","descricao":"CRLV"},{"id":"mv29","descricao":"Fichas técnicas"},{"id":"mv30","descricao":"Inventário da frota"}]'::jsonb, 'OB02 – Promover o consumo consciente de energia'),
   ('pdls5', 'i11', 'eixo1', 'Percentual de resíduos destinados adequadamente', 'Acréscimo de 5%', 'percentual', '[{"id":"mv10","descricao":"Certificados de destinação final, notas fiscais e comprovantes de recolhimento"},{"id":"mv11","descricao":"Fichas técnicas e inventário da frota"}]'::jsonb, 'OB04 – Racionalizar a gestão de resíduos'),
   ('pdls6', 'i12', 'eixo1', 'Percentual de água consumida (m³)', 'Redução de 5%', 'percentual', '[{"id":"mv12","descricao":"Relatórios operacionais"},{"id":"mv13","descricao":"Declaração da empresa de lavagem"}]'::jsonb, 'OB03 – Promover o consumo consciente de água'),
   ('pdls12', 'i18', 'eixo3', 'Percentual de serviços do portfólio com caráter sustentável', '10%', 'percentual', '[{"id":"mv31","descricao":"Checklist da fiscalização"},{"id":"mv32","descricao":"Relatórios operacionais"},{"id":"mv33","descricao":"Documentação comprobatória"}]'::jsonb, 'OB09 – Capacitar acerca de produtos e serviços mais sustentáveis'),
@@ -344,8 +364,8 @@ insert into indicadores_pdls (id, macroindicador_id, eixo_id, nome, meta, unidad
   ('pdls14', 'i20', 'eixo1', 'Percentual de redução da emissão de CO₂', 'Redução de 10%', 'percentual', '[{"id":"mv37","descricao":"Sistema de monitoramento da frota"},{"id":"mv38","descricao":"Relatórios gerenciais"},{"id":"mv39","descricao":"Registros de ocorrências"}]'::jsonb, 'OB01 – Reduzir a emissão de CO₂'),
   -- Tabela 3 — Apoio Administrativo
   ('pdls3', 'i9', 'eixo1', 'Percentual de redução de aquisição de materiais de consumo', 'Redução de 5%', 'percentual', '[{"id":"mv6","descricao":"Relatórios da contratada"},{"id":"mv7","descricao":"Registros de consumo e acompanhamento da fiscalização"}]'::jsonb, 'OB06 – Promover o uso consciente do material de consumo'),
-  ('pdls4', 'i10', 'eixo1', 'Percentual de energia elétrica consumida (kWh)', 'Redução de 5%', 'percentual', '[{"id":"mv8","descricao":"Relatórios de consumo"},{"id":"mv9","descricao":"Registros operacionais e ações de conscientização"}]'::jsonb, 'OB02 – Promover o consumo consciente de energia elétrica'),
-  ('pdls_apoio_agua', 'i_apoio_agua', 'eixo1', 'Percentual de água consumida (m³)', 'Redução de 5%', 'percentual', '[{"id":"mv8a","descricao":"Relatórios de consumo"},{"id":"mv9a","descricao":"Registros operacionais e ações de conscientização"}]'::jsonb, 'OB03 – Promover o consumo consciente de água'),
+  ('pdls4', 'i10', 'eixo1', 'Percentual de energia elétrica consumida (kWh) em relação ao ano anterior', 'Redução de 5%', 'percentual', '[{"id":"mv8","descricao":"Relatórios de consumo"},{"id":"mv9","descricao":"Registros operacionais e ações de conscientização"}]'::jsonb, 'OB02 – Promover o consumo consciente de energia elétrica'),
+  ('pdls_apoio_agua', 'i_apoio_agua', 'eixo1', 'Percentual de água consumida (m³) em relação ao ano anterior', 'Redução de 5%', 'percentual', '[{"id":"mv4a","descricao":"Relatórios de consumo"},{"id":"mv5a","descricao":"Registros operacionais e evidências das ações de economia de água"}]'::jsonb, 'OB03 – Promover o consumo consciente de água'),
   ('pdls15', 'i21', 'eixo1', 'Percentual de resíduos destinados adequadamente', 'Acréscimo de 5%', 'percentual', '[{"id":"mv40","descricao":"Registros da coleta seletiva"},{"id":"mv41","descricao":"Comprovantes de destinação"},{"id":"mv42","descricao":"Fiscalização contratual"}]'::jsonb, 'OB04 – Racionalizar a gestão de resíduos'),
   ('pdls16', 'i22', 'eixo6', 'Quantidade total de capacitações oferecidas sobre produtos e serviços sustentáveis', '2 capacitações', 'quantidade', '[{"id":"mv43","descricao":"Certificados"},{"id":"mv44","descricao":"Listas de presença"},{"id":"mv45","descricao":"Registros de treinamento"}]'::jsonb, 'OB13 – Fomentar a capacitação e conscientização na temática da sustentabilidade'),
   ('pdls17', 'i23', null, 'Cumprimento das exigências de SST', '100% de atendimento', 'conformidade', '[{"id":"mv46","descricao":"Comprovantes de treinamentos"},{"id":"mv47","descricao":"EPIs"},{"id":"mv48","descricao":"Documentação trabalhista"}]'::jsonb, 'Requisito contratual do TR'),
@@ -388,18 +408,38 @@ alter table ocorrencias add column if not exists justificativa_deducao_manual te
 -- "Eficiência dos Equipamentos" (i14) deixa de ser Meta da Unidade.
 -- i12 (Locação — água) segue como estava, aguardando a resposta da Vanessa.
 -- Dá pra marcar/desmarcar a qualquer momento em Estrutura de Sustentabilidade.
-update indicadores set impacto_coletivo = false where id = 'i14';
-update indicadores set impacto_coletivo = true where id in ('i7', 'i8', 'i9', 'i10', 'i_apoio_agua', 'i12', 'i21');
+-- ATENÇÃO: no banco de produção os aspectos têm ids asp1…asp21 (não i7…i27), então a marcação
+-- é feita por NOME + TIPO, que vale nos dois casos. Locação de veículos: nenhum aspecto é
+-- Meta da Unidade (a água pode ser lavagem de veículo — decisão da Vanessa, 28/10).
+update indicadores set impacto_coletivo = true
+where (tipo = 'Serviço de limpeza' and nome in ('Gestão de Resíduos e Coleta Seletiva', 'Uso Sustentável da Água'))
+   or (tipo = 'Apoio Administrativo' and nome in ('Uso Racional de Materiais', 'Gestão de Resíduos e Coleta Seletiva', 'Redução do Consumo de Energia Elétrica', 'Uso Sustentável da Água'));
 
 -- ── Migração (22/10/2026): aspectos por contrato + registro de quem incluiu ─
 -- Seguro rodar mais de uma vez. Rode ANTES de publicar a nova versão do sistema.
 -- Aspectos de Sustentabilidade escolhidos em cada contrato (lista de ids; vazio/nulo =
 -- contrato antigo, que continua usando todos os aspectos do seu objeto).
 alter table contratos add column if not exists aspectos_ids jsonb;
+-- Preposto da empresa contratada (por contrato). Sem esta coluna o banco RECUSA todo contrato novo.
+alter table contratos add column if not exists preposto text;
 -- Quem lançou e quando (preenchido automaticamente pelo sistema).
 alter table fornecedores add column if not exists criado_por text;
+-- Anexos do fornecedor (documentos que podem ser enviados no cadastro/edição)
+alter table fornecedores add column if not exists anexos jsonb default '[]'::jsonb;
 alter table fornecedores add column if not exists criado_em text;
 alter table contratos add column if not exists criado_por text;
 alter table contratos add column if not exists criado_em text;
 alter table ocorrencias add column if not exists criado_por text;
 alter table ocorrencias add column if not exists criado_em text;
+
+-- ── Migração (nov/2026): permissão da nova aba Contratos ────────────────────
+-- Opcional: o próprio sistema já copia a permissão de Fornecedores para os perfis que ainda
+-- não têm a de Contratos na primeira vez que alguém abre o sistema. Este comando faz o mesmo
+-- direto no banco (seguro rodar mais de uma vez).
+update perfis set permissoes = permissoes || jsonb_build_object('contratos', permissoes -> 'cadastro')
+where not (permissoes ? 'contratos') and (permissoes ? 'cadastro');
+
+-- ── Migração (23/11/2026): usuário que acompanha só alguns contratos ─────────
+-- Seguro rodar mais de uma vez. Rode ANTES de usar o campo "Contratos que este usuário acompanha".
+-- Lista de ids de contrato; vazio/nulo = o usuário vê todos os contratos (comportamento normal).
+alter table usuarios add column if not exists contratos_permitidos jsonb;

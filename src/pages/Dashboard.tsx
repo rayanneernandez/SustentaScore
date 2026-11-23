@@ -30,7 +30,6 @@ import {
   ChevronRight,
   RotateCcw,
   Award,
-  Calendar,
   Filter,
   Maximize2,
   Minimize2,
@@ -131,12 +130,6 @@ export default function Dashboard() {
   const [modoPeriodo, setModoPeriodo] = useState<'mes' | 'ano'>('mes');
   const [anoFiltro, setAnoFiltro] = useState(agora.getFullYear());
   const [mesFiltro, setMesFiltro] = useState(agora.getMonth() + 1); // 1-12
-
-  // "Última atualização" do cabeçalho — reflete o momento em que o Painel foi
-  // aberto/recarregado (antes ficava fixo em "31/05/2024 10:30", uma data de
-  // exemplo que nunca mudava).
-  const doisDigitos = (n: number) => String(n).padStart(2, '0');
-  const ultimaAtualizacaoStr = `${doisDigitos(agora.getDate())}/${doisDigitos(agora.getMonth() + 1)}/${agora.getFullYear()} ${doisDigitos(agora.getHours())}:${doisDigitos(agora.getMinutes())}`;
 
   const irPeriodoAnterior = () => {
     if (modoPeriodo === 'mes') {
@@ -787,10 +780,6 @@ export default function Dashboard() {
             {expandido ? 'Sair da tela inteira' : 'Tela inteira'}
           </button>
           <div className="dashboard-last-update-row">
-            <div className="dashboard-last-update">
-              <Calendar size={14} />
-              <span>Última atualização:<br />{ultimaAtualizacaoStr}</span>
-            </div>
             <div className="dashboard-export-hide">
               <NotificationBell aberto={notifAberto} onAbrirChange={setNotifAberto} />
             </div>

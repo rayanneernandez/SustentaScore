@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Cadastro from './pages/Cadastro';
+import Contratos from './pages/Contratos';
 import Indicadores from './pages/Indicadores';
 import EstruturaSustentabilidade from './pages/EstruturaSustentabilidade';
 import Ocorrencias from './pages/Ocorrencias';
@@ -10,6 +11,7 @@ import CalculoScore from './pages/CalculoScore';
 import MedicaoPagamento from './pages/MedicaoPagamento';
 import Usuarios from './pages/Usuarios';
 import Perfis from './pages/Perfis';
+import Logs from './pages/Logs';
 import Login from './pages/Login';
 import { DataProvider, useData } from './context/DataContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -20,6 +22,7 @@ import type { PaginaKey } from './types';
 const ROTA_DE: Record<PaginaKey, string> = {
   dashboard: '/',
   cadastro: '/cadastro',
+  contratos: '/contratos',
   indicadores: '/indicadores',
   cadastroPdls: '/estrutura-sustentabilidade',
   ocorrencias: '/ocorrencias',
@@ -27,6 +30,7 @@ const ROTA_DE: Record<PaginaKey, string> = {
   medicao: '/medicao',
   usuarios: '/usuarios',
   perfis: '/perfis',
+  logs: '/logs',
 };
 
 /**
@@ -64,6 +68,7 @@ function AppRoutes() {
       <Route path="/" element={<Layout />}>
         <Route index element={<RotaProtegida pagina="dashboard"><Dashboard /></RotaProtegida>} />
         <Route path="cadastro" element={<RotaProtegida pagina="cadastro"><Cadastro /></RotaProtegida>} />
+        <Route path="contratos" element={<RotaProtegida pagina="contratos"><Contratos /></RotaProtegida>} />
         <Route path="indicadores" element={<RotaProtegida pagina="indicadores"><Indicadores /></RotaProtegida>} />
         <Route path="estrutura-sustentabilidade" element={<RotaProtegida pagina="cadastroPdls"><EstruturaSustentabilidade /></RotaProtegida>} />
         <Route path="ocorrencias" element={<RotaProtegida pagina="ocorrencias"><Ocorrencias /></RotaProtegida>} />
@@ -71,6 +76,7 @@ function AppRoutes() {
         <Route path="medicao" element={<RotaProtegida pagina="medicao"><MedicaoPagamento /></RotaProtegida>} />
         <Route path="usuarios" element={<RotaProtegida pagina="usuarios"><Usuarios /></RotaProtegida>} />
         <Route path="perfis" element={<RotaProtegida pagina="perfis"><Perfis /></RotaProtegida>} />
+        <Route path="logs" element={<RotaProtegida pagina="logs"><Logs /></RotaProtegida>} />
       </Route>
     </Routes>
   );

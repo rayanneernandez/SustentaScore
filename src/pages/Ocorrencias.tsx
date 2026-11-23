@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus, ChevronDown, ChevronUp, Filter, X, Trash2,
@@ -7,6 +7,7 @@ import {
 import { useData } from '../context/DataContext';
 import { capitalizarPalavras, rotuloAutoria } from '../utils/texto';
 import { TAMANHO_MAX_ANEXO, MAX_ANEXOS_POR_ENVIO, arquivosParaAnexos } from '../utils/anexos';
+import { hojeISO, rotuloDoAnoMes } from '../utils/score';
 import type { Ocorrencia, TipoRegistroOcorrencia } from '../types';
 
 function formatDate(dateStr: string) {
@@ -22,8 +23,10 @@ function criarFormVazio() {
     indicadorId: '',
     eixoPDLSId: '',
     descricao: '',
-    data: '',
-    deducao: 25,
+    // Data em que a ocorrência aconteceu — é ela que define em qual mês a dedução é aplicada.
+    data: hojeISO(),
+    /** Pontos a deduzir: nunca 0 — mínimo 1. Fica '' enquanto a pessoa apaga para digitar outro valor. */
+    deducao: 25 as number | '',
     tipoRegistro: 'ocorrencia' as TipoRegistroOcorrencia,
     /** Só usado em Aspectos de desempenho coletivo (`Indicador.impactoColetivo`): marca que
      * a pessoa quer descontar pontos mesmo assim (situação excepcional causada pelo fornecedor). */
@@ -43,6 +46,7 @@ export default function Ocorrencias() {
   const podeVerCadastroPDLS = podeVer('cadastroPdls');
 
   const [filtroFornecedor, setFiltroFornecedor] = useState('todos');
+  const [filtroContrato, setFiltroContrato] = useState('todos');
   const [filtroIndicador, setFiltroIndicador] = useState('todos');
   const [filtroEixo, setFiltroEixo] = useState('todos');
   const [expandido, setExpandido] = useState<string | null>(null);
@@ -52,6 +56,9 @@ export default function Ocorrencias() {
   const [erroArquivo, setErroArquivo] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [erroJustificativa, setErroJustificativa] = useState(false);
+  // Depois da primeira tentativa de salvar, o aviso lista (ao vivo) o que ainda falta preencher.
+  const [tentouSalvar, setTentouSalvar] = useState(false);
+  const avisoRef = useRef<HTMLDivElement>(null);
 
   const nomeEixo = (id?: string) => {
     const eixo = eixosPDLS.find((e) => e.id === id);
@@ -67,6 +74,7 @@ export default function Ocorrencias() {
 
   const filtradas = ocorrencias.filter((o) => {
     if (filtroFornecedor !== 'todos' && o.fornecedorId !== filtroFornecedor) return false;
+    if (filtroContrato !== 'todos' && o.contratoId !== filtroContrato) return false;
     if (filtroIndicador !== 'todos' && o.indicadorId !== filtroIndicador) return false;
     if (filtroEixo !== 'todos' && o.eixoPDLSId !== filtroEixo) return false;
     return true;
@@ -119,14 +127,28 @@ export default function Ocorrencias() {
     setArquivos([]);
     setErroArquivo('');
     setErroJustificativa(false);
+    setTentouSalvar(false);
   };
 
+  const deducaoManualAplicada = aspectoColetivo && form.deducaoManual;
+  /** Campos obrigatórios ainda sem preenchimento (na ordem em que aparecem no formulário). */
+  const camposFaltando: { chave: string; rotulo: string }[] = [];
+  if (!form.fornecedorId) camposFaltando.push({ chave: 'fornecedor', rotulo: 'Fornecedor' });
+  if (!form.contratoId) camposFaltando.push({ chave: 'contrato', rotulo: 'Contrato' });
+  if (eixosDoAspectoDoForm.length > 0 && !form.eixoPDLSId) camposFaltando.push({ chave: 'eixo', rotulo: 'Eixo PDLS' });
+  if (!form.descricao.trim()) camposFaltando.push({ chave: 'descricao', rotulo: 'Descrição' });
+  if (!form.data) camposFaltando.push({ chave: 'data', rotulo: 'Data da ocorrência' });
+  else if (form.data > hojeISO()) camposFaltando.push({ chave: 'data', rotulo: 'Data da ocorrência (não pode ser uma data futura)' });
+  if (form.tipoRegistro === 'ocorrencia' && (form.deducao === '' || Number(form.deducao) < 1)) camposFaltando.push({ chave: 'deducao', rotulo: 'Dedução (pontos) — informe um valor de 1 ou mais' });
+  if (deducaoManualAplicada && !form.justificativa.trim()) camposFaltando.push({ chave: 'justificativa', rotulo: 'Justificativa da dedução manual' });
+  const invalido = (chave: string) => tentouSalvar && camposFaltando.some((c) => c.chave === chave);
+
   const handleAdd = async () => {
-    if (!form.fornecedorId || !form.descricao) return;
-    if (eixosDoAspectoDoForm.length > 0 && !form.eixoPDLSId) return;
-    const deducaoManualAplicada = aspectoColetivo && form.deducaoManual;
-    if (deducaoManualAplicada && !form.justificativa.trim()) {
-      setErroJustificativa(true);
+    if (camposFaltando.length > 0) {
+      setTentouSalvar(true);
+      if (camposFaltando.some((c) => c.chave === 'justificativa')) setErroJustificativa(true);
+      // O formulário rola dentro do modal: leva o aviso para a tela.
+      setTimeout(() => avisoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
       return;
     }
     setSalvando(true);
@@ -143,7 +165,7 @@ export default function Ocorrencias() {
       eixoPDLSId: form.eixoPDLSId || undefined,
       descricao: form.descricao,
       data: form.data || new Date().toISOString().split('T')[0],
-      deducao: form.tipoRegistro === 'treinamento' ? 0 : form.deducao,
+      deducao: form.tipoRegistro === 'treinamento' ? 0 : Number(form.deducao),
       tipoRegistro: form.tipoRegistro,
       registradoPor: form.registradoPor || undefined,
       link: form.link || undefined,
@@ -160,7 +182,7 @@ export default function Ocorrencias() {
       <div className="page-header">
         <div>
           <h1 className="page-title-serif">Ocorrências</h1>
-          <p className="page-subtitle">Registro de descumprimentos contratuais e treinamentos de sustentabilidade.</p>
+          <p className="page-subtitle">Registro de ocorrências do contrato — com dedução de pontos ou apenas para acompanhamento, sem dedução.</p>
         </div>
         {podeCriar && (
           <button className="btn-primary" onClick={() => setShowModal(true)}>
@@ -173,11 +195,29 @@ export default function Ocorrencias() {
       {/* Filtros */}
       <div className="occurrence-filters">
         <Filter size={14} className="text-muted" />
-        <select className="filter-select-plain" value={filtroFornecedor} onChange={(e) => setFiltroFornecedor(e.target.value)}>
+        <select
+          className="filter-select-plain"
+          value={filtroFornecedor}
+          onChange={(e) => {
+            setFiltroFornecedor(e.target.value);
+            // O contrato escolhido pode não ser do novo fornecedor: volta para "todos".
+            setFiltroContrato('todos');
+          }}
+        >
           <option value="todos">Todos fornecedores</option>
           {fornecedores.map((f) => (
             <option key={f.id} value={f.id}>{f.nome}</option>
           ))}
+        </select>
+        <select className="filter-select-plain" value={filtroContrato} onChange={(e) => setFiltroContrato(e.target.value)}>
+          <option value="todos">Todos os contratos</option>
+          {contratos
+            .filter((c) => filtroFornecedor === 'todos' || c.fornecedorId === filtroFornecedor)
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {filtroFornecedor === 'todos' ? `${c.fornecedorNome} — ` : ''}{c.numero}{c.unidade ? ` · ${c.unidade}` : ''}
+              </option>
+            ))}
         </select>
         <select className="filter-select-plain" value={filtroIndicador} onChange={(e) => setFiltroIndicador(e.target.value)}>
           <option value="todos">Todos os aspectos de sustentabilidade</option>
@@ -213,16 +253,20 @@ export default function Ocorrencias() {
                 >
                   <div className="occurrence-item-left">
                     <span className="occurrence-date">{formatDate(o.data)}</span>
-                    <span className="badge badge--outline">Eixo {eixosPDLS.find((e) => e.id === o.eixoPDLSId)?.numero ?? '—'}</span>
-                    {treinamento && (
-                      <span className="badge badge--outline occurrence-badge-treinamento">
-                        <GraduationCap size={12} /> Treinamento
+                    <div className="occurrence-main">
+                      <span className="occurrence-desc">{o.descricao}</span>
+                      <span className="occurrence-meta">
+                        <strong>{o.fornecedorNome}</strong>
+                        <span>Contrato {contratos.find((c) => c.id === o.contratoId)?.numero ?? '—'}</span>
+                        {o.indicadorNome && <span>{o.indicadorNome}</span>}
                       </span>
-                    )}
-                    {o.justificativaDeducaoManual && (
-                      <span className="badge badge--outline badge--coletivo">Dedução manual</span>
-                    )}
-                    <span className="occurrence-desc">{o.descricao}</span>
+                    </div>
+                    <div className="occurrence-badges">
+                      <span className="badge badge--outline">Eixo {eixosPDLS.find((e) => e.id === o.eixoPDLSId)?.numero ?? '—'}</span>
+                      {o.justificativaDeducaoManual && (
+                        <span className="badge badge--outline badge--coletivo">Dedução manual</span>
+                      )}
+                    </div>
                   </div>
                   <div className="occurrence-item-right">
                     {treinamento ? (
@@ -239,6 +283,10 @@ export default function Ocorrencias() {
                       <div>
                         <span className="detail-label">Fornecedor</span>
                         <span className="detail-value">{o.fornecedorNome}</span>
+                      </div>
+                      <div>
+                        <span className="detail-label">Contrato</span>
+                        <span className="detail-value">{contratos.find((c) => c.id === o.contratoId)?.numero ?? '—'}</span>
                       </div>
                       <div>
                         <span className="detail-label">Aspecto de Sustentabilidade</span>
@@ -261,7 +309,7 @@ export default function Ocorrencias() {
                       <div>
                         <span className="detail-label">{treinamento ? 'Dedução' : 'Dedução aplicada'}</span>
                         {treinamento ? (
-                          <span className="detail-value">Sem dedução — registro de treinamento</span>
+                          <span className="detail-value">Sem dedução — registro apenas para acompanhamento</span>
                         ) : (
                           <span className="detail-value text-danger">-{o.deducao} pontos</span>
                         )}
@@ -322,8 +370,8 @@ export default function Ocorrencias() {
                     <span>
                       Este aspecto é uma meta da unidade: o resultado reflete o desempenho global da unidade
                       administrativa (servidores, outros terceirizados e características do prédio também influenciam), e não
-                      a atuação de um único fornecedor. Por isso este registro entra como <strong>Treinamento</strong>: gera o
-                      alerta de capacitação e treinamento dos funcionários do contrato, sem descontar pontos do score.
+                      a atuação de um único fornecedor. Por isso este registro entra <strong>sem dedução</strong>: fica registrado e gera o
+                      alerta de campanha de treinamento dos funcionários do contrato, sem descontar pontos do score.
                     </span>
                   </div>
                 </div>
@@ -369,34 +417,37 @@ export default function Ocorrencias() {
             ) : (
             <div className="form-group form-group--full">
               <label className="form-label">Tipo de registro</label>
-              <div className="segmented-toggle">
+              <div className="segmented-toggle segmented-toggle--duas-linhas">
                 <button
                   type="button"
                   className={`segmented-toggle-btn ${form.tipoRegistro === 'ocorrencia' ? 'segmented-toggle-btn--active' : ''}`}
                   onClick={() => setForm((p) => ({ ...p, tipoRegistro: 'ocorrencia' }))}
                 >
-                  Ocorrência (com dedução)
+                  <strong>Com dedução</strong>
+                  <small>Desconta pontos do score do mês</small>
                 </button>
                 <button
                   type="button"
                   className={`segmented-toggle-btn ${form.tipoRegistro === 'treinamento' ? 'segmented-toggle-btn--active' : ''}`}
                   onClick={() => setForm((p) => ({ ...p, tipoRegistro: 'treinamento', deducao: 0 }))}
                 >
-                  <GraduationCap size={14} /> Treinamento (sem dedução)
+                  <strong>Sem dedução</strong>
+                  <small>Fica registrado, mas não desconta pontos</small>
                 </button>
               </div>
               {form.tipoRegistro === 'treinamento' && (
                 <p className="form-hint form-hint--muted">
-                  Use quando o caso não precisa de dedução de pontos — apenas uma orientação ou treinamento aplicado ao local.
+                  O registro aparece no histórico do fornecedor, mas não altera o score. Serve para orientações, advertências, acompanhamentos
+                  ou qualquer caso em que não deva haver desconto.
                 </p>
               )}
             </div>
             )}
 
             <div className="form-group">
-              <label className="form-label">Fornecedor</label>
+              <label className="form-label">Fornecedor *</label>
               <select
-                className="form-input"
+                className={`form-input${invalido('fornecedor') ? ' form-input--erro' : ''}`}
                 value={form.fornecedorId}
                 onChange={(e) => setForm({ ...form, fornecedorId: e.target.value, contratoId: '', registradoPor: '' })}
               >
@@ -405,9 +456,9 @@ export default function Ocorrencias() {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Contrato</label>
+              <label className="form-label">Contrato *</label>
               <select
-                className="form-input"
+                className={`form-input${invalido('contrato') ? ' form-input--erro' : ''}`}
                 value={form.contratoId}
                 onChange={(e) => {
                   const novoContrato = contratos.find((c) => c.id === e.target.value);
@@ -468,7 +519,7 @@ export default function Ocorrencias() {
               ) : eixosDoAspectoDoForm.length === 0 ? (
                 <p className="form-hint form-hint--muted">Não possui vinculação direta ao PDLS.</p>
               ) : (
-                <select className="form-input" value={form.eixoPDLSId} onChange={(e) => setForm({ ...form, eixoPDLSId: e.target.value })}>
+                <select className={`form-input${invalido('eixo') ? ' form-input--erro' : ''}`} value={form.eixoPDLSId} onChange={(e) => setForm({ ...form, eixoPDLSId: e.target.value })}>
                   {eixosDoAspectoDoForm.map((e) => <option key={e.id} value={e.id}>Eixo {e.numero} – {e.nome}</option>)}
                 </select>
               )}
@@ -495,39 +546,60 @@ export default function Ocorrencias() {
               )}
             </div>
             <div className="form-group form-group--full">
-              <label className="form-label">Descrição</label>
-              <input className="form-input" placeholder="Descreva a ocorrência..." value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} />
+              <label className="form-label">Descrição *</label>
+              <input className={`form-input${invalido('descricao') ? ' form-input--erro' : ''}`} placeholder="Descreva a ocorrência..." value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} />
             </div>
             <div className="form-group">
-              <label className="form-label">Data</label>
-              <input type="date" className="form-input" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} />
+              <label className="form-label">Data da ocorrência *</label>
+              <input
+                type="date"
+                className={`form-input${invalido('data') ? ' form-input--erro' : ''}`}
+                value={form.data}
+                max={hojeISO()}
+                onChange={(e) => setForm({ ...form, data: e.target.value })}
+              />
+              {form.data && form.data <= hojeISO() && form.tipoRegistro === 'ocorrencia' && (
+                <span className="form-hint form-hint--muted">
+                  A dedução será aplicada no score de {rotuloDoAnoMes(form.data.slice(0, 7))}, o mês desta data.
+                </span>
+              )}
             </div>
             {form.tipoRegistro === 'ocorrencia' && (
               <div className="form-group">
-                <label className="form-label">Dedução (pontos)</label>
-                <input type="number" className="form-input" value={form.deducao} onChange={(e) => setForm({ ...form, deducao: Number(e.target.value) })} />
+                <label className="form-label">Dedução (pontos) *</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  className={`form-input ${invalido('deducao') ? 'form-input--erro' : ''}`}
+                  placeholder="Ex: 25"
+                  value={form.deducao}
+                  onChange={(e) => setForm({ ...form, deducao: e.target.value === '' ? '' : Number(e.target.value) })}
+                />
+                {invalido('deducao') && <span className="form-hint form-hint--danger">Informe um valor de 1 ou mais.</span>}
               </div>
             )}
 
-            {form.tipoRegistro === 'treinamento' && (
-              <>
+            {/* Link e anexos valem para qualquer registro — com ou sem dedução (evidência, foto, ofício, material). */}
+            <>
                 <div className="form-group form-group--full">
                   <label className="form-label">Link (opcional)</label>
                   <input
                     className="form-input"
-                    placeholder="Ex: link do material de treinamento, norma ou procedimento"
+                    placeholder="Ex: link de evidência, material de apoio, norma ou procedimento"
                     value={form.link}
                     onChange={(e) => setForm({ ...form, link: e.target.value })}
                   />
                 </div>
                 <div className="form-group form-group--full">
-                  <label className="form-label">Anexar material (opcional)</label>
+                  <label className="form-label">Anexos (opcional)</label>
                   <label className="file-upload-box">
                     <Upload size={16} />
                     <span>
                       {arquivos.length
                         ? `${arquivos.length} arquivo${arquivos.length !== 1 ? 's' : ''} selecionado${arquivos.length !== 1 ? 's' : ''}`
-                        : 'Selecionar um ou mais arquivos — PDF, imagem ou documento (até 4MB cada)'}
+                        : 'Anexar fotos, ofícios ou documentos — PDF, imagem ou documento (até 4MB cada)'}
                     </span>
                     <input type="file" multiple accept=".pdf,.doc,.docx,image/*" className="file-upload-input" onChange={handleArquivos} />
                   </label>
@@ -546,7 +618,15 @@ export default function Ocorrencias() {
                   )}
                   {erroArquivo && <span className="form-hint form-hint--danger">{erroArquivo}</span>}
                 </div>
-              </>
+            </>
+
+            {tentouSalvar && camposFaltando.length > 0 && (
+              <div ref={avisoRef} className="form-alerta-campos" role="alert">
+                <strong>Não foi possível salvar ainda.</strong> Preencha o que falta:
+                <ul>
+                  {camposFaltando.map((c) => <li key={c.chave}>{c.rotulo}</li>)}
+                </ul>
+              </div>
             )}
 
             <div className="modal-actions">

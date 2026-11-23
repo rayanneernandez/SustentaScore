@@ -247,8 +247,8 @@ export default function MedicaoPagamento() {
       </div>
 
       {/* Filtros */}
-      <div className="filters-bar">
-        <div className="filter-group">
+      <div className="filters-bar filters-bar--linha">
+        <div className="filter-group filter-group--forn">
           <label className="filter-label">Fornecedor</label>
           <select className="filter-select-input" value={fornecedorSel} onChange={(e) => setFornecedorSel(e.target.value)}>
             {opcoesFornecedor.map((f) => (
@@ -256,7 +256,7 @@ export default function MedicaoPagamento() {
             ))}
           </select>
         </div>
-        <div className="filter-group">
+        <div className="filter-group filter-group--unid">
           <label className="filter-label">Unidade</label>
           <select className="filter-select-input" value={unidadeSel} onChange={(e) => setUnidadeSel(e.target.value)}>
             {opcoesUnidade.map((u) => (
@@ -264,7 +264,7 @@ export default function MedicaoPagamento() {
             ))}
           </select>
         </div>
-        <div className="filter-group">
+        <div className="filter-group filter-group--contr">
           <label className="filter-label">Contrato</label>
           <select className="filter-select-input" value={contrato.id} onChange={(e) => setContratoSel(e.target.value)}>
             {contratosParaSelecao.map((c) => (
@@ -274,7 +274,7 @@ export default function MedicaoPagamento() {
             ))}
           </select>
         </div>
-        <div className="filter-group">
+        <div className="filter-group filter-group--mes">
           <label className="filter-label">Mês</label>
           <select className="filter-select-input" value={mesSel} onChange={(e) => setMesSel(e.target.value)}>
             {opcoesMes.map((m) => (

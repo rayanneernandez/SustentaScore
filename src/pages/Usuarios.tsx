@@ -4,12 +4,13 @@ import { useData } from '../context/DataContext';
 import { PERFIL_ADMIN_ID, PERFIL_COLABORADOR_ID } from '../config/sistema';
 import type { Usuario } from '../types';
 
-const formUsuarioVazio = { nome: '', email: '', senha: '', cargo: '', perfilId: '' };
+const formUsuarioVazio = { nome: '', email: '', senha: '', cargo: '', perfilId: '', contratosPermitidos: [] as string[] };
 
 export default function Usuarios() {
   const {
     usuarios,
     usuarioAtual,
+    contratos,
     perfis,
     podeVer,
     podeCriar: podeCriarPagina,
@@ -27,6 +28,7 @@ export default function Usuarios() {
   const [usuarioEditando, setUsuarioEditando] = useState<Usuario | null>(null);
   const [formUsuario, setFormUsuario] = useState(formUsuarioVazio);
   const [erroUsuario, setErroUsuario] = useState('');
+  const [buscaContrato, setBuscaContrato] = useState('');
 
   if (!podeVer('usuarios')) {
     return (
@@ -47,13 +49,15 @@ export default function Usuarios() {
   const abrirNovoUsuario = () => {
     setUsuarioEditando(null);
     setFormUsuario({ ...formUsuarioVazio, perfilId: PERFIL_COLABORADOR_ID });
+    setBuscaContrato('');
     setErroUsuario('');
     setShowModalUsuario(true);
   };
 
   const abrirEditarUsuario = (u: Usuario) => {
     setUsuarioEditando(u);
-    setFormUsuario({ nome: u.nome, email: u.email, senha: '', cargo: u.cargo ?? '', perfilId: u.perfilId });
+    setFormUsuario({ nome: u.nome, email: u.email, senha: '', cargo: u.cargo ?? '', perfilId: u.perfilId, contratosPermitidos: u.contratosPermitidos ?? [] });
+    setBuscaContrato('');
     setErroUsuario('');
     setShowModalUsuario(true);
   };
@@ -70,8 +74,15 @@ export default function Usuarios() {
       setErroUsuario('Já existe um usuário com esse e-mail.');
       return;
     }
+    // Quem edita pode não enxergar todos os contratos: os que ele não vê ficam como estavam.
+    const idsQueEuEnxergo = new Set(contratos.map((c) => c.id));
+    const contratosPermitidos = [
+      ...(usuarioEditando?.contratosPermitidos ?? []).filter((id) => !idsQueEuEnxergo.has(id)),
+      ...formUsuario.contratosPermitidos.filter((id) => idsQueEuEnxergo.has(id)),
+    ];
     if (usuarioEditando) {
       updateUsuario(usuarioEditando.id, {
+        contratosPermitidos,
         nome: formUsuario.nome.trim(),
         email: formUsuario.email.trim(),
         cargo: formUsuario.cargo.trim() || undefined,
@@ -90,6 +101,7 @@ export default function Usuarios() {
         senha: formUsuario.senha.trim(),
         cargo: formUsuario.cargo.trim() || undefined,
         perfilId: formUsuario.perfilId,
+        ...(contratosPermitidos.length ? { contratosPermitidos } : {}),
       });
     }
     setShowModalUsuario(false);
@@ -145,6 +157,11 @@ export default function Usuarios() {
                     <span className={`badge ${u.perfilId === PERFIL_ADMIN_ID ? 'badge--green' : 'badge--gray'}`}>
                       {nomePerfilDe(u.perfilId)}
                     </span>
+                    {u.perfilId !== PERFIL_ADMIN_ID && !!u.contratosPermitidos?.length && (
+                      <span className="usuario-restrito" title="Este usuário só enxerga os contratos marcados no cadastro dele.">
+                        Só {u.contratosPermitidos.length} contrato{u.contratosPermitidos.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
                   </td>
                   {(podeEditar || podeExcluir) && (
                     <td className="data-table-acoes">
@@ -234,6 +251,61 @@ export default function Usuarios() {
                 ))}
               </select>
             </div>
+
+            {formUsuario.perfilId !== PERFIL_ADMIN_ID && (
+              <div className="form-group form-group--full">
+                <label className="form-label">Contratos que este usuário acompanha (opcional)</label>
+                <span className="form-hint form-hint--muted">
+                  Sem nenhum marcado, ele vê todos os contratos. Marcando, ele só enxerga esses contratos, os fornecedores
+                  deles e as ocorrências, medições e scores deles. As telas que ele acessa continuam definidas pelo perfil.
+                </span>
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  placeholder="Buscar por nº do contrato, fornecedor ou objeto..."
+                  value={buscaContrato}
+                  onChange={(e) => setBuscaContrato(e.target.value)}
+                />
+                <div className="usuario-contratos-lista">
+                  {contratos
+                    .filter((c) => `${c.numero} ${c.fornecedorNome} ${c.objeto ?? ''}`.toLowerCase().includes(buscaContrato.trim().toLowerCase()))
+                    .map((c) => (
+                      <label key={c.id} className="usuario-contratos-item">
+                        <input
+                          type="checkbox"
+                          checked={formUsuario.contratosPermitidos.includes(c.id)}
+                          onChange={(e) =>
+                            setFormUsuario((p) => ({
+                              ...p,
+                              contratosPermitidos: e.target.checked
+                                ? [...p.contratosPermitidos, c.id]
+                                : p.contratosPermitidos.filter((id) => id !== c.id),
+                            }))
+                          }
+                        />
+                        <span>
+                          <strong>{c.numero}</strong> · {c.fornecedorNome}
+                          {c.objeto ? <span className="usuario-contratos-objeto"> — {c.objeto}</span> : null}
+                          {c.status === 'inativo' ? <span className="usuario-contratos-objeto"> (inativo)</span> : null}
+                        </span>
+                      </label>
+                    ))}
+                  {contratos.length === 0 && <p className="form-hint form-hint--muted">Nenhum contrato cadastrado ainda.</p>}
+                </div>
+                <div className="usuario-contratos-rodape">
+                  <span>
+                    {formUsuario.contratosPermitidos.length === 0
+                      ? 'Nenhum marcado: vê todos os contratos.'
+                      : `${formUsuario.contratosPermitidos.length} contrato${formUsuario.contratosPermitidos.length !== 1 ? 's' : ''} marcado${formUsuario.contratosPermitidos.length !== 1 ? 's' : ''}.`}
+                  </span>
+                  {formUsuario.contratosPermitidos.length > 0 && (
+                    <button type="button" className="link-btn" onClick={() => setFormUsuario((p) => ({ ...p, contratosPermitidos: [] }))}>
+                      Limpar seleção
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {erroUsuario && <p className="form-hint form-hint--danger">{erroUsuario}</p>}
 

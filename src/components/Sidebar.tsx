@@ -8,12 +8,16 @@ import {
   ClipboardList,
   BarChart2,
   ShieldCheck,
+  ScrollText,
   HelpCircle,
   LogOut,
   Repeat,
   Sun,
   Moon,
   X,
+  FileText,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
@@ -25,32 +29,53 @@ import type { PaginaKey } from '../types';
 // primeiro e só depois detalhar os aspectos, evitando poluir o fluxo.
 const navOperacional: { to: string; label: string; icon: typeof Users; num: number; pagina: PaginaKey }[] = [
   { to: '/cadastro', label: 'Fornecedores', icon: Users, num: 1, pagina: 'cadastro' },
-  { to: '/estrutura-sustentabilidade', label: 'Estrutura de Sustentabilidade', icon: Layers, num: 2, pagina: 'cadastroPdls' },
-  { to: '/indicadores', label: 'Aspectos de Sustentabilidade', icon: Leaf, num: 3, pagina: 'indicadores' },
-  { to: '/ocorrencias', label: 'Registro de Ocorrências', icon: AlertTriangle, num: 4, pagina: 'ocorrencias' },
-  { to: '/score', label: 'Cálculo do Score', icon: Calculator, num: 5, pagina: 'score' },
-  { to: '/medicao', label: 'Medição e Pagamento', icon: ClipboardList, num: 6, pagina: 'medicao' },
+  { to: '/contratos', label: 'Contratos', icon: FileText, num: 2, pagina: 'contratos' },
+  { to: '/estrutura-sustentabilidade', label: 'Estrutura de Sustentabilidade', icon: Layers, num: 3, pagina: 'cadastroPdls' },
+  { to: '/indicadores', label: 'Aspectos de Sustentabilidade', icon: Leaf, num: 4, pagina: 'indicadores' },
+  { to: '/ocorrencias', label: 'Registro de Ocorrências', icon: AlertTriangle, num: 5, pagina: 'ocorrencias' },
+  { to: '/score', label: 'Cálculo do Score', icon: Calculator, num: 6, pagina: 'score' },
+  { to: '/medicao', label: 'Medição e Pagamento', icon: ClipboardList, num: 7, pagina: 'medicao' },
 ];
 
 const navGerencial: { to: string; label: string; icon: typeof Users; num: number; pagina: PaginaKey }[] = [
-  { to: '/', label: 'Monitoramento e Painel Gerencial', icon: BarChart2, num: 7, pagina: 'dashboard' },
+  { to: '/', label: 'Monitoramento e Painel Gerencial', icon: BarChart2, num: 8, pagina: 'dashboard' },
 ];
 
-export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function Sidebar({
+  open,
+  onClose,
+  recolhido,
+  onAlternarRecolhido,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Modo recolhido (só ícones) — vale só em telas largas; no celular o menu já abre/fecha por cima. */
+  recolhido: boolean;
+  onAlternarRecolhido: () => void;
+}) {
   const { usuarioAtual, perfis, perfilEfetivo, podeVer, ehAdministradorReal, modoVisualizacao, setModoVisualizacao, logout } = useData();
   const { tema, alternarTema } = useTheme();
 
   return (
-    <aside className={`sidebar${open ? ' sidebar--open' : ''}`}>
+    <aside className={`sidebar${open ? ' sidebar--open' : ''}${recolhido ? ' sidebar--collapsed' : ''}`}>
       {/* Logo */}
       <div className="sidebar-logo">
         <div className="sidebar-logo-icon">
           <Leaf size={20} strokeWidth={1.8} />
         </div>
-        <div>
+        <div className="sidebar-logo-text">
           <div className="sidebar-logo-title">SustentaScore</div>
           <div className="sidebar-logo-sub">Avaliação da Sustentabilidade dos Fornecedores</div>
         </div>
+        <button
+          type="button"
+          className="sidebar-collapse-btn"
+          onClick={onAlternarRecolhido}
+          aria-label={recolhido ? 'Expandir menu' : 'Recolher menu'}
+          title={recolhido ? 'Expandir menu' : 'Recolher menu'}
+        >
+          {recolhido ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+        </button>
         <button className="sidebar-close-btn" onClick={onClose} aria-label="Fechar menu">
           <X size={18} />
         </button>
@@ -65,6 +90,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               <NavLink
                 key={to}
                 to={to}
+                title={label}
                 end={to === '/'}
                 onClick={onClose}
                 className={({ isActive }) =>
@@ -73,7 +99,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               >
                 <span className="sidebar-nav-num">{num}</span>
                 <Icon size={16} strokeWidth={1.8} />
-                <span>{label}</span>
+                <span className="sidebar-nav-label">{label}</span>
               </NavLink>
             ))}
           </nav>
@@ -89,6 +115,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               <NavLink
                 key={to}
                 to={to}
+                title={label}
                 end
                 onClick={onClose}
                 className={({ isActive }) =>
@@ -97,7 +124,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               >
                 <span className="sidebar-nav-num">{num}</span>
                 <Icon size={16} strokeWidth={1.8} />
-                <span>{label}</span>
+                <span className="sidebar-nav-label">{label}</span>
               </NavLink>
             ))}
           </nav>
@@ -105,34 +132,50 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
       )}
 
       {/* Administração — Usuários e Perfis de Acesso são telas (e permissões) separadas agora */}
-      {(podeVer('usuarios') || podeVer('perfis')) && (
+      {(podeVer('usuarios') || podeVer('perfis') || podeVer('logs')) && (
         <div className="sidebar-section">
           <span className="sidebar-section-label">ADMINISTRAÇÃO</span>
           <nav className="sidebar-nav">
             {podeVer('usuarios') && (
               <NavLink
                 to="/usuarios"
-                onClick={onClose}
-                className={({ isActive }) =>
-                  `sidebar-nav-item${isActive ? ' sidebar-nav-item--active' : ''}`
-                }
-              >
-                <span className="sidebar-nav-num">8</span>
-                <Users size={16} strokeWidth={1.8} />
-                <span>Usuários</span>
-              </NavLink>
-            )}
-            {podeVer('perfis') && (
-              <NavLink
-                to="/perfis"
+                title="Usuários"
                 onClick={onClose}
                 className={({ isActive }) =>
                   `sidebar-nav-item${isActive ? ' sidebar-nav-item--active' : ''}`
                 }
               >
                 <span className="sidebar-nav-num">9</span>
+                <Users size={16} strokeWidth={1.8} />
+                <span className="sidebar-nav-label">Usuários</span>
+              </NavLink>
+            )}
+            {podeVer('perfis') && (
+              <NavLink
+                to="/perfis"
+                title="Perfis de Acesso"
+                onClick={onClose}
+                className={({ isActive }) =>
+                  `sidebar-nav-item${isActive ? ' sidebar-nav-item--active' : ''}`
+                }
+              >
+                <span className="sidebar-nav-num">10</span>
                 <ShieldCheck size={16} strokeWidth={1.8} />
-                <span>Perfis de Acesso</span>
+                <span className="sidebar-nav-label">Perfis de Acesso</span>
+              </NavLink>
+            )}
+            {podeVer('logs') && (
+              <NavLink
+                to="/logs"
+                title="Logs de Atividade"
+                onClick={onClose}
+                className={({ isActive }) =>
+                  `sidebar-nav-item${isActive ? ' sidebar-nav-item--active' : ''}`
+                }
+              >
+                <span className="sidebar-nav-num">11</span>
+                <ScrollText size={16} strokeWidth={1.8} />
+                <span className="sidebar-nav-label">Logs de Atividade</span>
               </NavLink>
             )}
           </nav>
@@ -191,18 +234,14 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
             )}
           </div>
         )}
-        <button className="sidebar-footer-btn">
+        <button className="sidebar-footer-btn" title="Ajuda">
           <HelpCircle size={16} strokeWidth={1.8} />
-          <span>Ajuda</span>
+          <span className="sidebar-nav-label">Ajuda</span>
         </button>
-        <button className="sidebar-footer-btn" onClick={logout}>
+        <button className="sidebar-footer-btn" onClick={logout} title="Sair do sistema">
           <LogOut size={16} strokeWidth={1.8} />
-          <span>Sair do sistema</span>
+          <span className="sidebar-nav-label">Sair do sistema</span>
         </button>
-        <div className="sidebar-footer-brand">
-          <Leaf size={12} />
-          <span>SustentaScore – Sistema Digital de Monitoramento e Avaliação do Desempenho de Fornecedores na Sustentabilidade</span>
-        </div>
       </div>
     </aside>
   );

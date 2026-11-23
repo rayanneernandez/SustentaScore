@@ -9,7 +9,7 @@
  */
 import { supabase } from './supabaseClient';
 import type {
-  Contrato, EixoPDLS, Fornecedor, Indicador, IndicadorPDLS,
+  Contrato, EixoPDLS, Fornecedor, Indicador, IndicadorPDLS, LogAtividade,
   Medicao, Ocorrencia, Perfil, ScoreHistorico, Usuario,
 } from '../types';
 
@@ -88,9 +88,25 @@ function crud<T extends object>(tabela: string) {
   };
 }
 
-export const dbFornecedores = crud<Fornecedor>('fornecedores');
+export const dbFornecedores = {
+  ...crud<Fornecedor>('fornecedores'),
+  /** Procura direto no banco um fornecedor com este CNPJ (salvo com ou sem pontuação) — pega cadastros
+   * feitos por outra pessoa que ainda não chegaram nesta tela. */
+  async buscarPorCnpj(cnpjFormatado: string, cnpjDigitos: string): Promise<Fornecedor[]> {
+    const { data, error } = await supabase.from('fornecedores').select('*').in('cnpj', [cnpjFormatado, cnpjDigitos]).limit(5);
+    relatarErro('Procurar fornecedor pelo CNPJ', error);
+    return (data ?? []).map((linha) => linhaParaObjeto<Fornecedor>(linha));
+  },
+};
 export const dbContratos = {
   ...crud<Contrato>('contratos'),
+  /** Procura direto no banco contratos com este número (sem diferenciar maiúsculas/minúsculas). */
+  async buscarPorNumero(numero: string): Promise<Contrato[]> {
+    const padrao = numero.trim().replace(/[\\%_]/g, '\\$&');
+    const { data, error } = await supabase.from('contratos').select('*').ilike('numero', padrao).limit(5);
+    relatarErro('Procurar contrato pelo número', error);
+    return (data ?? []).map((linha) => linhaParaObjeto<Contrato>(linha));
+  },
   /** Atualiza em lote o nome do fornecedor denormalizado em todos os contratos
    * dele — mantém `contratos.fornecedor_nome` sincronizado quando o fornecedor
    * é renomeado (ver `updateFornecedor` em `DataContext.tsx`). */
@@ -103,9 +119,26 @@ export const dbIndicadores = crud<Indicador>('indicadores');
 export const dbEixosPDLS = crud<EixoPDLS>('eixos_pdls');
 export const dbIndicadoresPDLS = crud<IndicadorPDLS>('indicadores_pdls');
 export const dbOcorrencias = crud<Ocorrencia>('ocorrencias');
-export const dbMedicoes = crud<Medicao>('medicoes');
+export const dbMedicoes = {
+  ...crud<Medicao>('medicoes'),
+  /** Grava várias medições de uma vez (ex: os meses anteriores de um contrato que começou no passado). */
+  async inserirVarias(itens: Medicao[]): Promise<void> {
+    if (itens.length === 0) return;
+    const { error } = await supabase.from('medicoes').insert(itens.map((m) => objetoParaLinha(m)));
+    relatarErro('Criar em medicoes', error);
+  },
+};
 export const dbUsuarios = crud<Usuario>('usuarios');
 export const dbPerfis = crud<Perfil>('perfis');
+export const dbLogs = {
+  ...crud<LogAtividade>('logs'),
+  /** Os registros mais recentes primeiro. */
+  async listarRecentes(limite: number): Promise<LogAtividade[]> {
+    const { data, error } = await supabase.from('logs').select('*').order('criado_em', { ascending: false }).limit(limite);
+    relatarErro('Carregar logs', error);
+    return (data ?? []).map((linha) => linhaParaObjeto<LogAtividade>(linha));
+  },
+};
 
 // ── Exceções que não seguem o padrão "chave primária `id`" ──────────────────
 

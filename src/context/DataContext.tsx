@@ -2,17 +2,19 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import {
   dbContratos, dbEixosPDLS, dbFornecedores, dbIndicadores, dbIndicadoresPDLS,
   dbMedicoes, dbNotificacoesLidas, dbObjetosContratuais, dbOcorrencias,
-  dbPerfis, dbScoreHistorico, dbUsuarios,
+  dbLogs, dbPerfis, dbScoreHistorico, dbUsuarios,
 } from '../lib/db';
 import { supabase, supabaseConfigurado } from '../lib/supabaseClient';
-import { calcularScoreMesAtual, prepararMedicaoMesAtual } from '../utils/score';
-import { PERFIS_PADRAO, PERFIL_ADMIN_ID, PERFIL_COLABORADOR_ID } from '../config/sistema';
+import { anoMesAtual, aplicarOcorrenciaEmMesPassado, calcularScoreMesAtual, medicoesDosMesesAnteriores, prepararMedicaoMesAtual, rotuloDoAnoMes } from '../utils/score';
+import { PERFIS_PADRAO, PERFIL_ADMIN_ID, PERFIL_COLABORADOR_ID, permissoesTotais } from '../config/sistema';
 import type {
   Contrato,
   EixoPDLS,
   Fornecedor,
   HistoricoEvento,
   HistoricoTipo,
+  AcaoLog,
+  LogAtividade,
   Indicador,
   IndicadorPDLS,
   Medicao,
@@ -83,6 +85,53 @@ function sincronizar(promessa: Promise<void>, contexto: string): void {
   });
 }
 
+/** Nome legível de cada campo do fornecedor, para a tela de Logs. */
+const ROTULO_CAMPO_FORNECEDOR: Record<string, string> = {
+  nome: 'Nome',
+  cnpj: 'CNPJ',
+  telefone: 'Telefone',
+  endereco: 'Endereço',
+  observacao: 'Observações',
+  anexos: 'Anexos',
+};
+
+function textoDoValor(valor: unknown): string {
+  if (valor === undefined || valor === null || valor === '') return '(vazio)';
+  if (Array.isArray(valor)) return valor.length === 0 ? '(nenhum)' : `${valor.length} arquivo(s)`;
+  return String(valor);
+}
+
+/** Compara o que mudou entre o registro antigo e o patch (só os campos informados em `rotulos`). */
+function diferencas<T extends object>(
+  antes: T | undefined,
+  patch: Partial<T>,
+  rotulos: Record<string, string>,
+): NonNullable<LogAtividade['detalhes']> {
+  const lista: NonNullable<LogAtividade['detalhes']> = [];
+  for (const [campo, rotulo] of Object.entries(rotulos)) {
+    if (!(campo in patch)) continue;
+    const novo = (patch as Record<string, unknown>)[campo];
+    const velho = antes ? (antes as Record<string, unknown>)[campo] : undefined;
+    const igual = JSON.stringify(velho ?? null) === JSON.stringify(novo ?? null);
+    if (igual) continue;
+    if (Array.isArray(novo) || Array.isArray(velho)) {
+      const nomes = (v: unknown) => (Array.isArray(v) ? v.map((a) => (a as { nome?: string }).nome ?? '?') : []);
+      const antigos = nomes(velho);
+      const novos = nomes(novo);
+      const adicionados = novos.filter((n) => !antigos.includes(n));
+      const removidos = antigos.filter((n) => !novos.includes(n));
+      const partes = [
+        adicionados.length ? `adicionou ${adicionados.join(', ')}` : '',
+        removidos.length ? `removeu ${removidos.join(', ')}` : '',
+      ].filter(Boolean);
+      lista.push({ campo: rotulo, para: partes.join('; ') || 'alterado' });
+    } else {
+      lista.push({ campo: rotulo, de: textoDoValor(velho), para: textoDoValor(novo) });
+    }
+  }
+  return lista;
+}
+
 interface DadosCarregados {
   fornecedores: Fornecedor[];
   contratos: Contrato[];
@@ -121,7 +170,24 @@ async function carregarDoSupabase(): Promise<DadosCarregados> {
   // Rede de segurança: garante que os dois perfis padrão sempre existam, mesmo
   // que o banco tenha sido criado sem rodar o seed de `supabase/schema.sql` —
   // sem isso o sistema poderia ficar sem nenhum caminho de acesso.
-  const perfis = [...perfisCarregados];
+  // Perfis criados antes da aba Contratos não têm a permissão 'contratos': herdam a de
+  // Fornecedores (quem criava/editava contrato lá continua podendo, agora na nova aba).
+  const perfis = perfisCarregados.map((p) => {
+    if (p.permissoes?.contratos || !p.permissoes) return p;
+    const herdada = p.permissoes.cadastro ?? { ver: false, criar: false, editar: false, excluir: false };
+    const atualizado: Perfil = { ...p, permissoes: { ...p.permissoes, contratos: { ...herdada } } };
+    sincronizar(dbPerfis.atualizar(p.id, { permissoes: atualizado.permissoes }), `permissão Contratos do perfil ${p.nome}`);
+    return atualizado;
+  });
+  // O perfil Administrador sempre enxerga a aba Logs (criada depois dos perfis já existentes).
+  for (let i = 0; i < perfis.length; i++) {
+    const p = perfis[i];
+    if (p.id === PERFIL_ADMIN_ID && p.permissoes && !p.permissoes.logs) {
+      const atualizado: Perfil = { ...p, permissoes: { ...p.permissoes, logs: permissoesTotais(true).logs } };
+      perfis[i] = atualizado;
+      sincronizar(dbPerfis.atualizar(p.id, { permissoes: atualizado.permissoes }), 'permissão Logs do perfil Administrador');
+    }
+  }
   for (const padrao of PERFIS_PADRAO) {
     if (!perfis.some((p) => p.id === padrao.id)) {
       perfis.unshift(padrao);
@@ -261,6 +327,12 @@ interface DataContextValue {
   fornecedores: Fornecedor[];
   contratos: Contrato[];
   addFornecedor: (f: Fornecedor) => void;
+  /** Lê do banco os registros mais recentes da aba Logs (quem fez o quê, de todos os usuários). */
+  carregarLogs: (limite: number) => Promise<LogAtividade[]>;
+  /** Fornecedor já cadastrado com este CNPJ (confere nesta tela e direto no banco), ou null. */
+  buscarFornecedorPorCnpj: (cnpj: string, ignorarId?: string) => Promise<Fornecedor | null>;
+  /** Contrato já cadastrado com este número (confere nesta tela e direto no banco), ou null. */
+  buscarContratoPorNumero: (numero: string, ignorarId?: string) => Promise<Contrato | null>;
   updateFornecedor: (id: string, patch: Partial<Fornecedor>) => void;
   addContrato: (c: Contrato) => void;
   updateContrato: (id: string, patch: Partial<Contrato>, evento?: { tipo: HistoricoTipo; descricao: string }) => void;
@@ -396,13 +468,76 @@ export function DataProvider({ children }: { children: ReactNode }) {
   /** Carimbo automático de autoria: quem (usuário logado) e quando — só preenche o que ainda não veio. */
   const carimboAutoria = () => ({ criadoPor: usuarioAtual?.nome, criadoEm: new Date().toISOString() });
 
+  /** Grava no histórico de atividades (aba Logs) quem fez o quê. Nunca trava a tela: se falhar, só avisa no console. */
+  const registrarLog = (
+    acao: AcaoLog,
+    entidade: string,
+    descricao: string,
+    opcoes: { entidadeId?: string; detalhes?: LogAtividade['detalhes']; usuario?: Usuario | null } = {},
+  ) => {
+    const autor = opcoes.usuario ?? usuarioAtual;
+    const log: LogAtividade = {
+      id: `log${Date.now()}${Math.random().toString(36).slice(2, 8)}`,
+      usuarioId: autor?.id,
+      usuarioNome: autor?.nome ?? 'Sistema',
+      acao,
+      entidade,
+      entidadeId: opcoes.entidadeId,
+      descricao,
+      detalhes: opcoes.detalhes && opcoes.detalhes.length ? opcoes.detalhes : undefined,
+      criadoEm: new Date().toISOString(),
+    };
+    sincronizar(dbLogs.inserir(log), `registrar log: ${descricao}`);
+  };
+
+  /** Lê os logs mais recentes direto do banco (a tela de Logs sempre mostra o que está salvo, de todos os usuários). */
+  const carregarLogs = (limite: number) => dbLogs.listarRecentes(limite);
+
+  const normalizarNumeroContrato = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
+  const digitosCnpj = (c: string) => c.replace(/\D/g, '');
+
+  const buscarFornecedorPorCnpj = async (cnpj: string, ignorarId?: string): Promise<Fornecedor | null> => {
+    const digitos = digitosCnpj(cnpj);
+    if (digitos.length !== 14) return null;
+    const mesmo = (f: Fornecedor) => f.id !== ignorarId && digitosCnpj(f.cnpj) === digitos;
+    const local = (dados?.fornecedores ?? []).find(mesmo);
+    if (local) return local;
+    try {
+      const formatado = `${digitos.slice(0, 2)}.${digitos.slice(2, 5)}.${digitos.slice(5, 8)}/${digitos.slice(8, 12)}-${digitos.slice(12)}`;
+      return (await dbFornecedores.buscarPorCnpj(formatado, digitos)).find(mesmo) ?? null;
+    } catch (e) {
+      console.error('Não foi possível conferir o CNPJ no banco:', e);
+      return null;
+    }
+  };
+
+  const buscarContratoPorNumero = async (numero: string, ignorarId?: string): Promise<Contrato | null> => {
+    const alvo = normalizarNumeroContrato(numero);
+    if (!alvo) return null;
+    const mesmo = (c: Contrato) => c.id !== ignorarId && normalizarNumeroContrato(c.numero) === alvo;
+    const local = (dados?.contratos ?? []).find(mesmo);
+    if (local) return local;
+    try {
+      return (await dbContratos.buscarPorNumero(numero)).find(mesmo) ?? null;
+    } catch (e) {
+      console.error('Não foi possível conferir o número do contrato no banco:', e);
+      return null;
+    }
+  };
+
   const addFornecedor = (fornecedor: Fornecedor) => {
     const f: Fornecedor = { ...carimboAutoria(), ...fornecedor };
     setDados((prev) => (prev ? { ...prev, fornecedores: [...prev.fornecedores, f] } : prev));
     sincronizar(dbFornecedores.inserir(f), `novo fornecedor ${f.nome}`);
+    registrarLog('criou', 'Fornecedor', `Cadastrou o fornecedor ${f.nome} (CNPJ ${f.cnpj}).`, { entidadeId: f.id });
   };
 
   const updateFornecedor = (id: string, patch: Partial<Fornecedor>) => {
+    const antes = dados?.fornecedores.find((f) => f.id === id);
+    const detalhes = diferencas(antes, patch, ROTULO_CAMPO_FORNECEDOR);
+    if (detalhes.length) {
+      registrarLog('editou', 'Fornecedor', `Editou o fornecedor ${antes?.nome ?? id}.`, { entidadeId: id, detalhes });
+    }
     setDados((prev) =>
       prev
         ? {
@@ -441,7 +576,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         : prev,
     );
-    sincronizar(dbContratos.inserir(contratoComHistorico), `novo contrato ${c.numero}`);
+    // Quem acompanha só alguns contratos: o contrato que ele mesmo cadastra entra na lista dele,
+    // senão sumiria da tela logo após salvar.
+    if (usuarioAtual && !ehAdministradorReal && usuarioAtual.contratosPermitidos?.length) {
+      updateUsuario(usuarioAtual.id, { contratosPermitidos: [...usuarioAtual.contratosPermitidos, c.id] });
+    }
+    // O mês corrente já nasce registrado no histórico (Cálculo do Score e Medição e Pagamento),
+    // mesmo sem nenhuma ocorrência — 500 pontos / 100%. A medição só é gravada depois do contrato
+    // (ela referencia o contrato no banco).
+    const medicaoInicial =
+      contratoComHistorico.status === 'ativo'
+        ? prepararMedicaoMesAtual(
+            contratoComHistorico.id,
+            calcularScoreMesAtual(contratoComHistorico.id, dados?.ocorrencias ?? []),
+            dados?.medicoes ?? [],
+          )
+        : null;
+    // Contrato que começou antes de ser cadastrado: já nasce com os meses anteriores no histórico
+    // (500 pontos, sem ocorrências), para poder lançar ocorrências e o valor da nota neles.
+    const mesesAnteriores =
+      contratoComHistorico.status === 'ativo'
+        ? medicoesDosMesesAnteriores(contratoComHistorico, dados?.medicoes ?? [], dados?.ocorrencias ?? [])
+        : [];
+    const medicoesNovas: Medicao[] = [
+      ...mesesAnteriores,
+      ...(medicaoInicial?.nova && medicaoInicial.medicaoCompleta ? [medicaoInicial.medicaoCompleta] : []),
+    ];
+    if (medicoesNovas.length > 0) {
+      setDados((prev) => (prev ? { ...prev, medicoes: [...prev.medicoes, ...medicoesNovas] } : prev));
+      sincronizar(
+        dbContratos.inserir(contratoComHistorico).then(() => dbMedicoes.inserirVarias(medicoesNovas)),
+        `novo contrato ${c.numero} (com as medições dos meses)`,
+      );
+    } else {
+      sincronizar(dbContratos.inserir(contratoComHistorico), `novo contrato ${c.numero}`);
+    }
+    registrarLog('criou', 'Contrato', `Cadastrou o contrato ${c.numero} do fornecedor ${c.fornecedorNome}.`, { entidadeId: c.id });
     const fornecedorAtual = dados?.fornecedores.find((f) => f.id === c.fornecedorId);
     if (fornecedorAtual) {
       sincronizar(
@@ -452,32 +622,53 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
 
   const updateContrato: DataContextValue['updateContrato'] = (id, patch, evento) => {
-    let historicoNovo: HistoricoEvento[] | undefined;
+    // O evento "ocorrencia" é só o reflexo automático de uma ocorrência (que já tem o seu próprio log).
+    if (evento && evento.tipo !== 'ocorrencia') {
+      const contratoAtual = dados?.contratos.find((c) => c.id === id);
+      registrarLog('editou', 'Contrato', `Contrato ${contratoAtual?.numero ?? id}: ${evento.descricao}`, { entidadeId: id });
+    }
+    // O evento novo é montado aqui (e não dentro do setDados): o atualizador do React pode rodar
+    // só depois, e aí o histórico novo não chegaria a ser gravado no banco.
+    const contratoAntes = dados?.contratos.find((c) => c.id === id);
+    const eventoNovo: HistoricoEvento | undefined = evento
+      ? { ...novoEvento(evento.tipo, evento.descricao), autor: usuarioAtual?.nome }
+      : undefined;
+    const historicoNovo: HistoricoEvento[] | undefined =
+      eventoNovo && contratoAntes ? [...(contratoAntes.historico ?? []), eventoNovo] : undefined;
     setDados((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
         contratos: prev.contratos.map((c) => {
           if (c.id !== id) return c;
-          const historico = evento
-            ? [...(c.historico ?? []), { ...novoEvento(evento.tipo, evento.descricao), autor: usuarioAtual?.nome }]
-            : c.historico;
-          historicoNovo = historico;
+          const historico = eventoNovo ? [...(c.historico ?? []), eventoNovo] : c.historico;
           return { ...c, ...patch, historico };
         }),
       };
     });
-    sincronizar(
-      dbContratos.atualizar(id, historicoNovo !== undefined ? { ...patch, historico: historicoNovo } : patch),
-      `editar contrato ${id}`,
-    );
+    // Mudou a vigência (início/fim): garante as medições dos meses anteriores que ainda não existem.
+    if (contratoAntes && ('vigenciaInicio' in patch || 'vigenciaFim' in patch)) {
+      const contratoDepois = { ...contratoAntes, ...patch };
+      if (contratoDepois.status === 'ativo') {
+        const faltantes = medicoesDosMesesAnteriores(contratoDepois, dados?.medicoes ?? [], dados?.ocorrencias ?? []);
+        if (faltantes.length > 0) {
+          setDados((prev) => (prev ? { ...prev, medicoes: [...prev.medicoes, ...faltantes] } : prev));
+          sincronizar(dbMedicoes.inserirVarias(faltantes), `criar medições dos meses anteriores do contrato ${id}`);
+        }
+      }
+    }
+    const patchBanco = historicoNovo !== undefined ? { ...patch, historico: historicoNovo } : patch;
+    if (Object.keys(patchBanco).length > 0) {
+      sincronizar(dbContratos.atualizar(id, patchBanco), `editar contrato ${id}`);
+    }
   };
 
+  // Usam só os contratos que o usuário enxerga (quem acompanha poucos contratos vê o score só deles).
   const contratosDoFornecedor = (fornecedorId: string) =>
-    (dados?.contratos ?? []).filter((c) => c.fornecedorId === fornecedorId);
+    (visivel?.contratos ?? dados?.contratos ?? []).filter((c) => c.fornecedorId === fornecedorId);
 
   const contratosAtivosDoFornecedor = (fornecedorId: string) =>
-    (dados?.contratos ?? []).filter((c) => c.fornecedorId === fornecedorId && c.status === 'ativo');
+    (visivel?.contratos ?? dados?.contratos ?? []).filter((c) => c.fornecedorId === fornecedorId && c.status === 'ativo');
 
   const scoreFornecedor = (fornecedorId: string): number | null => {
     const ativos = contratosAtivosDoFornecedor(fornecedorId);
@@ -505,6 +696,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // ── Ocorrências ──────────────────────────────────────────────
   const updateMedicao = (id: string, patch: Partial<Medicao>) => {
+    const antesMedicao = dados?.medicoes.find((m) => m.id === id);
+    const contratoDaMedicao = dados?.contratos.find((c) => c.id === antesMedicao?.contratoId);
+    const detalhesMedicao = diferencas(antesMedicao, patch, { status: 'Status do pagamento', valor: 'Valor', pagamento: '% de pagamento' });
+    if (detalhesMedicao.length) {
+      registrarLog(
+        'editou',
+        'Medição e Pagamento',
+        `Alterou a medição ${antesMedicao?.periodo ?? ''} do contrato ${contratoDaMedicao?.numero ?? antesMedicao?.contratoId ?? id}.`,
+        { entidadeId: id, detalhes: detalhesMedicao },
+      );
+    }
     setDados((prev) =>
       prev ? { ...prev, medicoes: prev.medicoes.map((m) => (m.id === id ? { ...m, ...patch } : m)) } : prev,
     );
@@ -515,6 +717,41 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const o: Ocorrencia = { ...carimboAutoria(), ...ocorrencia };
     setDados((prev) => (prev ? { ...prev, ocorrencias: [o, ...prev.ocorrencias] } : prev));
     sincronizar(dbOcorrencias.inserir(o), `nova ocorrência ${o.id}`);
+    registrarLog(
+      'criou',
+      'Ocorrência',
+      `Registrou uma ocorrência ${o.tipoRegistro === 'treinamento' ? 'sem dedução' : 'com dedução'} para ${o.fornecedorNome}${o.indicadorNome ? ` (${o.indicadorNome})` : ''}.`,
+      { entidadeId: o.id },
+    );
+
+    // A data informada pelo fiscal manda: a dedução cai no mês DA DATA da ocorrência. Se for um mês
+    // que já passou, mexe só na Medição daquele mês (o score do mês corrente não muda).
+    const mesOcorrencia = (o.data || '').slice(0, 7);
+    if (o.tipoRegistro !== 'treinamento' && /^\d{4}-\d{2}$/.test(mesOcorrencia) && mesOcorrencia !== anoMesAtual()) {
+      const doMes = [o, ...(dados?.ocorrencias ?? [])].filter(
+        (x) => x.contratoId === o.contratoId && x.tipoRegistro !== 'treinamento' && (x.data || '').startsWith(mesOcorrencia),
+      );
+      const aplicada = aplicarOcorrenciaEmMesPassado(o.contratoId, mesOcorrencia, o.deducao || 0, doMes, dados?.medicoes ?? []);
+      let scoreDoMes: number;
+      if (aplicada.nova) {
+        const novaMedicao = aplicada.medicaoCompleta;
+        scoreDoMes = novaMedicao.score;
+        setDados((prev) => (prev ? { ...prev, medicoes: [...prev.medicoes, novaMedicao] } : prev));
+        sincronizar(dbMedicoes.inserir(novaMedicao), `criar medição de ${novaMedicao.periodo} do contrato ${o.contratoId}`);
+      } else {
+        const { id: idMedicao, patch: patchMedicao } = aplicada;
+        scoreDoMes = patchMedicao.score ?? 0;
+        setDados((prev) =>
+          prev ? { ...prev, medicoes: prev.medicoes.map((m) => (m.id === idMedicao ? { ...m, ...patchMedicao } : m)) } : prev,
+        );
+        sincronizar(dbMedicoes.atualizar(idMedicao, patchMedicao), `atualizar medição de ${rotuloDoAnoMes(mesOcorrencia)} do contrato ${o.contratoId}`);
+      }
+      updateContrato(o.contratoId, {}, {
+        tipo: 'ocorrencia',
+        descricao: `Nova ocorrência registrada em ${rotuloDoAnoMes(mesOcorrencia)}: -${o.deducao} ponto${o.deducao === 1 ? '' : 's'}. Score de ${rotuloDoAnoMes(mesOcorrencia)} atualizado para ${scoreDoMes}.`,
+      });
+      return;
+    }
 
     // Toda Ocorrência "com dedução" desconta na hora o score do mês corrente do
     // contrato — o score reinicia em 500 todo mês (pedido explícito da usuária,
@@ -557,9 +794,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const addIndicador = (i: Indicador) => {
     setDados((prev) => (prev ? { ...prev, indicadores: [...prev.indicadores, i] } : prev));
     sincronizar(dbIndicadores.inserir(i), `novo aspecto ${i.nome}`);
+    registrarLog('criou', 'Aspecto de Sustentabilidade', `Criou o aspecto ${i.nome}.`, { entidadeId: i.id });
   };
 
   const updateIndicador = (id: string, patch: Partial<Indicador>) => {
+    const indAntes = dados?.indicadores.find((i) => i.id === id);
+    registrarLog('editou', 'Aspecto de Sustentabilidade', `Editou o aspecto ${patch.nome ?? indAntes?.nome ?? id}.`, {
+      entidadeId: id,
+      detalhes: diferencas(indAntes, patch, { nome: 'Nome' }),
+    });
     setDados((prev) =>
       prev ? { ...prev, indicadores: prev.indicadores.map((i) => (i.id === id ? { ...i, ...patch } : i)) } : prev,
     );
@@ -567,6 +810,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
 
   const removeIndicador = (id: string) => {
+    registrarLog('excluiu', 'Aspecto de Sustentabilidade', `Excluiu o aspecto ${dados?.indicadores.find((i) => i.id === id)?.nome ?? id}.`, { entidadeId: id });
     setDados((prev) =>
       prev
         ? {
@@ -585,6 +829,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const updateEixoPDLS = (id: string, nome: string) => {
     const limpo = nome.trim();
     if (!limpo) return;
+    const eixoAntes = dados?.eixosPDLS.find((e) => e.id === id);
+    registrarLog('editou', 'Eixo PDLS', `Renomeou o eixo ${eixoAntes?.numero ?? ''} para "${limpo}".`, {
+      entidadeId: id,
+      detalhes: [{ campo: 'Nome', de: eixoAntes?.nome, para: limpo }],
+    });
     setDados((prev) =>
       prev ? { ...prev, eixosPDLS: prev.eixosPDLS.map((e) => (e.id === id ? { ...e, nome: limpo } : e)) } : prev,
     );
@@ -598,6 +847,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const novo: EixoPDLS = { id: `eixo-custom-${Date.now()}`, numero: numeroFinal, nome: limpo };
     setDados((prev) => (prev ? { ...prev, eixosPDLS: [...prev.eixosPDLS, novo] } : prev));
     sincronizar(dbEixosPDLS.inserir(novo), `novo eixo ${limpo}`);
+    registrarLog('criou', 'Eixo PDLS', `Criou o eixo ${numeroFinal} — ${limpo}.`, { entidadeId: novo.id });
   };
 
   const removeEixoPDLS = (id: string): boolean => {
@@ -609,6 +859,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (emUso) return false;
     setDados((prev) => (prev ? { ...prev, eixosPDLS: prev.eixosPDLS.filter((e) => e.id !== id) } : prev));
     sincronizar(dbEixosPDLS.remover(id), `excluir eixo ${id}`);
+    registrarLog('excluiu', 'Eixo PDLS', `Excluiu o eixo ${dados.eixosPDLS.find((e) => e.id === id)?.nome ?? id}.`, { entidadeId: id });
     return true;
   };
 
@@ -623,9 +874,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const addIndicadorPDLS = (i: IndicadorPDLS) => {
     setDados((prev) => (prev ? { ...prev, indicadoresPDLS: [...prev.indicadoresPDLS, i] } : prev));
     sincronizar(dbIndicadoresPDLS.inserir(i), `novo indicador de desempenho ${i.nome}`);
+    registrarLog('criou', 'Indicador de Desempenho', `Criou o indicador de desempenho ${i.nome}.`, { entidadeId: i.id });
   };
 
   const updateIndicadorPDLS = (id: string, patch: Partial<IndicadorPDLS>) => {
+    const pdlsAntes = dados?.indicadoresPDLS.find((p) => p.id === id);
+    registrarLog('editou', 'Indicador de Desempenho', `Editou o indicador de desempenho ${patch.nome ?? pdlsAntes?.nome ?? id}.`, {
+      entidadeId: id,
+      detalhes: diferencas(pdlsAntes, patch, { nome: 'Nome' }),
+    });
     setDados((prev) =>
       prev
         ? { ...prev, indicadoresPDLS: prev.indicadoresPDLS.map((p) => (p.id === id ? { ...p, ...patch } : p)) }
@@ -635,6 +892,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
 
   const removeIndicadorPDLS = (id: string) => {
+    registrarLog('excluiu', 'Indicador de Desempenho', `Excluiu o indicador de desempenho ${dados?.indicadoresPDLS.find((p) => p.id === id)?.nome ?? id}.`, { entidadeId: id });
     setDados((prev) => (prev ? { ...prev, indicadoresPDLS: prev.indicadoresPDLS.filter((p) => p.id !== id) } : prev));
     sincronizar(dbIndicadoresPDLS.remover(id), `excluir indicador de desempenho ${id}`);
   };
@@ -646,11 +904,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (dados.objetosContratuais.some((o) => o.toLowerCase() === limpo.toLowerCase())) return;
     setDados((prev) => (prev ? { ...prev, objetosContratuais: [...prev.objetosContratuais, limpo] } : prev));
     sincronizar(dbObjetosContratuais.inserir(limpo), `novo objeto contratual ${limpo}`);
+    registrarLog('criou', 'Objeto Contratual', `Criou o objeto contratual ${limpo}.`);
   };
 
   const removeObjetoContratual = (nome: string) => {
     setDados((prev) => (prev ? { ...prev, objetosContratuais: prev.objetosContratuais.filter((o) => o !== nome) } : prev));
     sincronizar(dbObjetosContratuais.remover(nome), `excluir objeto contratual ${nome}`);
+    registrarLog('excluiu', 'Objeto Contratual', `Excluiu o objeto contratual ${nome}.`);
   };
 
   // ── Usuários e sessão ──────────────────────────────────────────
@@ -672,6 +932,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(CHAVE_SESSAO);
     }
     setModoVisualizacao(null);
+    registrarLog('entrou', 'Sessão', 'Entrou no sistema.', { usuario: encontrado });
   };
 
   const login = (email: string, senha: string, manterConectado: boolean): boolean => {
@@ -725,6 +986,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    registrarLog('saiu', 'Sessão', 'Saiu do sistema.');
     setUsuarioAtualId(null);
     localStorage.removeItem(CHAVE_SESSAO);
     sessionStorage.removeItem(CHAVE_SESSAO);
@@ -734,9 +996,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const addUsuario = (u: Usuario) => {
     setDados((prev) => (prev ? { ...prev, usuarios: [...prev.usuarios, u] } : prev));
     sincronizar(dbUsuarios.inserir(u), `novo usuário ${u.email}`);
+    registrarLog('criou', 'Usuário', `Criou o usuário ${u.nome} (${u.email}).`, { entidadeId: u.id });
   };
 
   const updateUsuario = (id: string, patch: Partial<Usuario>) => {
+    const usuarioAntes = dados?.usuarios.find((u) => u.id === id);
+    const detalhesUsuario = diferencas(usuarioAntes, patch, { nome: 'Nome', email: 'E-mail', cargo: 'Cargo', perfilId: 'Perfil' });
+    if (patch.contratosPermitidos !== undefined) {
+      const antes = [...(usuarioAntes?.contratosPermitidos ?? [])].sort().join(',');
+      const depois = [...patch.contratosPermitidos].sort().join(',');
+      if (antes !== depois) {
+        const rotulo = (n: number) => (n === 0 ? 'todos os contratos' : `${n} contrato${n !== 1 ? 's' : ''}`);
+        detalhesUsuario.push({
+          campo: 'Contratos que acompanha',
+          de: rotulo(usuarioAntes?.contratosPermitidos?.length ?? 0),
+          para: rotulo(patch.contratosPermitidos.length),
+        });
+      }
+    }
+    // A senha nunca é gravada no log — só o aviso de que foi trocada.
+    if (patch.senha !== undefined && patch.senha !== usuarioAntes?.senha) detalhesUsuario.push({ campo: 'Senha', para: 'alterada' });
+    for (const d of detalhesUsuario) {
+      if (d.campo === 'Perfil') {
+        d.de = dados?.perfis.find((p) => p.id === usuarioAntes?.perfilId)?.nome ?? d.de;
+        d.para = dados?.perfis.find((p) => p.id === patch.perfilId)?.nome ?? d.para;
+      }
+    }
+    if (detalhesUsuario.length) {
+      registrarLog('editou', 'Usuário', `Editou o usuário ${usuarioAntes?.nome ?? id}.`, { entidadeId: id, detalhes: detalhesUsuario });
+    }
     setDados((prev) =>
       prev ? { ...prev, usuarios: prev.usuarios.map((u) => (u.id === id ? { ...u, ...patch } : u)) } : prev,
     );
@@ -755,6 +1043,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(CHAVE_SESSAO);
     }
     sincronizar(dbUsuarios.remover(id), `excluir usuário ${id}`);
+    registrarLog('excluiu', 'Usuário', `Excluiu o usuário ${alvo.nome} (${alvo.email}).`, { entidadeId: id });
     return true;
   };
 
@@ -762,9 +1051,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const addPerfil = (p: Perfil) => {
     setDados((prev) => (prev ? { ...prev, perfis: [...prev.perfis, p] } : prev));
     sincronizar(dbPerfis.inserir(p), `novo perfil ${p.nome}`);
+    registrarLog('criou', 'Perfil de Acesso', `Criou o perfil de acesso ${p.nome}.`, { entidadeId: p.id });
   };
 
   const updatePerfil = (id: string, patch: Partial<Perfil>) => {
+    const perfilAntes = dados?.perfis.find((p) => p.id === id);
+    registrarLog('editou', 'Perfil de Acesso', `Editou o perfil de acesso ${patch.nome ?? perfilAntes?.nome ?? id}${patch.permissoes ? ' (permissões)' : ''}.`, {
+      entidadeId: id,
+      detalhes: diferencas(perfilAntes, patch, { nome: 'Nome' }),
+    });
     // O perfil Administrador padrão nunca perde o acesso total — só o nome pode mudar.
     const patchEfetivo: Partial<Perfil> = id === PERFIL_ADMIN_ID ? { ...patch, permissoes: undefined, padrao: true } : patch;
     setDados((prev) =>
@@ -790,6 +1085,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (emUso) return false;
     setDados((prev) => (prev ? { ...prev, perfis: prev.perfis.filter((p) => p.id !== id) } : prev));
     sincronizar(dbPerfis.remover(id), `excluir perfil ${id}`);
+    registrarLog('excluiu', 'Perfil de Acesso', `Excluiu o perfil de acesso ${alvo.nome}.`, { entidadeId: id });
     return true;
   };
 
@@ -808,11 +1104,36 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const podeEditar = (pagina: PaginaKey): boolean => !!perfilEfetivo?.permissoes[pagina]?.editar;
   const podeExcluir = (pagina: PaginaKey): boolean => !!perfilEfetivo?.permissoes[pagina]?.excluir;
 
+  /** Dados já limitados aos contratos que o usuário logado acompanha (ver `Usuario.contratosPermitidos`).
+   * Sem limite (lista vazia) ou sendo Administrador, devolve tudo. As gravações continuam usando
+   * `dados` inteiro — só o que as telas enxergam é filtrado. */
+  const visivel = useMemo(() => {
+    if (!dados) return null;
+    const permitidos = usuarioAtual?.contratosPermitidos ?? [];
+    if (ehAdministradorReal || permitidos.length === 0) {
+      return { contratos: dados.contratos, fornecedores: dados.fornecedores, ocorrencias: dados.ocorrencias, medicoes: dados.medicoes };
+    }
+    const ids = new Set(permitidos);
+    const contratos = dados.contratos.filter((c) => ids.has(c.id));
+    const fornecedoresDosContratos = new Set(contratos.map((c) => c.fornecedorId));
+    const fornecedoresComContrato = new Set(dados.contratos.map((c) => c.fornecedorId));
+    return {
+      contratos,
+      // Também aparece o fornecedor que o próprio usuário cadastrou e ainda não tem contrato.
+      fornecedores: dados.fornecedores.filter(
+        (f) => fornecedoresDosContratos.has(f.id) || (!fornecedoresComContrato.has(f.id) && !!usuarioAtual && f.criadoPor === usuarioAtual.nome),
+      ),
+      ocorrencias: dados.ocorrencias.filter((o) => !!o.contratoId && ids.has(o.contratoId)),
+      medicoes: dados.medicoes.filter((m) => ids.has(m.contratoId)),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dados, usuarioAtualId, ehAdministradorReal]);
+
   const notificacoes = useMemo<Notificacao[]>(() => {
-    if (!dados) return [];
+    if (!dados || !visivel) return [];
     const base = [
-      ...gerarNotificacoesVigencia(dados.contratos),
-      ...gerarNotificacoesTreinamento(dados.ocorrencias, dados.indicadores),
+      ...gerarNotificacoesVigencia(visivel.contratos),
+      ...gerarNotificacoesTreinamento(visivel.ocorrencias, dados.indicadores),
     ];
     return base
       .map((n) => ({ ...n, lida: dados.notificacoesLidasIds.includes(n.id) }))
@@ -820,14 +1141,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (a.lida !== b.lida) return a.lida ? 1 : -1;
         return ORDEM_URGENCIA[a.urgencia] - ORDEM_URGENCIA[b.urgencia];
       });
-  }, [dados]);
+  }, [dados, visivel]);
 
   const value = useMemo<DataContextValue | null>(() => {
-    if (!dados) return null;
+    if (!dados || !visivel) return null;
     return {
-      fornecedores: dados.fornecedores,
-      contratos: dados.contratos,
+      fornecedores: visivel.fornecedores,
+      contratos: visivel.contratos,
       addFornecedor,
+      carregarLogs,
+      buscarFornecedorPorCnpj,
+      buscarContratoPorNumero,
       updateFornecedor,
       addContrato,
       updateContrato,
@@ -837,9 +1161,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       notificacoes,
       marcarNotificacaoLida,
       marcarTodasNotificacoesLidas,
-      ocorrencias: dados.ocorrencias,
+      ocorrencias: visivel.ocorrencias,
       addOcorrencia,
-      medicoes: dados.medicoes,
+      medicoes: visivel.medicoes,
       updateMedicao,
       scoreHistorico: dados.scoreHistorico,
       indicadores: dados.indicadores,
@@ -881,7 +1205,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       podeExcluir,
       // eslint-disable-next-line react-hooks/exhaustive-deps
     };
-  }, [dados, notificacoes, usuarioAtualId, modoVisualizacao]);
+  }, [dados, visivel, notificacoes, usuarioAtualId, modoVisualizacao]);
 
   if (!supabaseConfigurado) {
     return <TelaAvisoConfiguracao />;

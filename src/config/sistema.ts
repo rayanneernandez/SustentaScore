@@ -12,14 +12,16 @@ import type { Perfil, PaginaKey } from '../types';
  */
 export const PAGINAS_SISTEMA: { key: PaginaKey; label: string; num: number }[] = [
   { key: 'cadastro', label: 'Fornecedores', num: 1 },
-  { key: 'indicadores', label: 'Aspectos de Sustentabilidade', num: 2 },
+  { key: 'contratos', label: 'Contratos', num: 2 },
   { key: 'cadastroPdls', label: 'Estrutura de Sustentabilidade', num: 3 },
-  { key: 'ocorrencias', label: 'Registro de Ocorrências', num: 4 },
-  { key: 'score', label: 'Cálculo do Score', num: 5 },
-  { key: 'medicao', label: 'Medição e Pagamento', num: 6 },
-  { key: 'dashboard', label: 'Monitoramento e Painel Gerencial', num: 7 },
-  { key: 'usuarios', label: 'Usuários', num: 8 },
-  { key: 'perfis', label: 'Perfis de Acesso', num: 9 },
+  { key: 'indicadores', label: 'Aspectos de Sustentabilidade', num: 4 },
+  { key: 'ocorrencias', label: 'Registro de Ocorrências', num: 5 },
+  { key: 'score', label: 'Cálculo do Score', num: 6 },
+  { key: 'medicao', label: 'Medição e Pagamento', num: 7 },
+  { key: 'dashboard', label: 'Monitoramento e Painel Gerencial', num: 8 },
+  { key: 'usuarios', label: 'Usuários', num: 9 },
+  { key: 'perfis', label: 'Perfis de Acesso', num: 10 },
+  { key: 'logs', label: 'Logs de Atividade', num: 11 },
 ];
 
 /**
@@ -42,7 +44,7 @@ export const UNIDADES_ADMINISTRATIVAS: string[] = [
  * padrão do perfil Colaborador (`PERFIS_PADRAO`, abaixo) — são as telas de
  * configuração/estrutura, não do dia a dia operacional.
  */
-export const PAGINAS_ADMINISTRACAO: PaginaKey[] = ['cadastroPdls', 'usuarios', 'perfis'];
+export const PAGINAS_ADMINISTRACAO: PaginaKey[] = ['cadastroPdls', 'usuarios', 'perfis', 'logs'];
 
 export const permissoesTotais = (valor: boolean): Perfil['permissoes'] =>
   PAGINAS_SISTEMA.reduce(

@@ -68,7 +68,7 @@ export default function EstruturaSustentabilidade() {
     objetosContratuais, addObjetoContratual, removeObjetoContratual,
     indicadores, addIndicador, updateIndicador, removeIndicador,
     eixosPDLS, addEixoPDLS, updateEixoPDLS, removeEixoPDLS,
-    indicadoresPDLSDe, addIndicadorPDLS, updateIndicadorPDLS, removeIndicadorPDLS,
+    indicadoresPDLS, indicadoresPDLSDe, addIndicadorPDLS, updateIndicadorPDLS, removeIndicadorPDLS,
     podeVer, podeCriar: podeCriarPagina, podeEditar: podeEditarPagina, podeExcluir: podeExcluirPagina,
   } = useData();
   const podeCriar = podeCriarPagina('cadastroPdls');
@@ -92,6 +92,7 @@ export default function EstruturaSustentabilidade() {
   const [novoEixoPDLS, setNovoEixoPDLS] = useState('');
   const [novoEixoNumero, setNovoEixoNumero] = useState('');
   const [erroEixo, setErroEixo] = useState('');
+  const [erroAspecto, setErroAspecto] = useState('');
 
   const [formPDLS, setFormPDLS] = useState<FormPDLS>(formPDLSVazio);
   const [editandoPDLSId, setEditandoPDLSId] = useState<string | null>(null);
@@ -111,6 +112,19 @@ export default function EstruturaSustentabilidade() {
   // dos seletores — pra usuária eles simplesmente não existem ainda; quando for
   // preciso, ela cadastra um Eixo PDLS novo normalmente (ver `handleAddEixo`).
   const eixosNomeados = eixosPDLS.filter((e) => !e.nome.toLowerCase().includes('a definir'));
+  // Passo 3: cada Aspecto mostra só os Eixos que ele realmente tem (os que já possuem Indicador
+  // de Desempenho cadastrado para ele — ex: Capacitação só tem o Eixo 6). Aspecto novo, ainda sem
+  // nenhum Indicador, mostra todos os eixos para o primeiro cadastro. Quem pode editar consegue
+  // abrir a lista completa em "Vincular a outro eixo".
+  const [mostrarTodosEixos, setMostrarTodosEixos] = useState(false);
+  useEffect(() => { setMostrarTodosEixos(false); }, [aspectoSelecionadoId]);
+  const indicadoresDoAspecto = aspectoSelecionado ? indicadoresPDLS.filter((p) => p.macroindicadorId === aspectoSelecionado.id) : [];
+  const eixosComIndicador = new Set(indicadoresDoAspecto.map((p) => p.eixoId).filter(Boolean) as string[]);
+  const aspectoTemSemVinculo = indicadoresDoAspecto.some((p) => !p.eixoId);
+  const aspectoSemNada = indicadoresDoAspecto.length === 0;
+  const listaCompleta = mostrarTodosEixos || aspectoSemNada;
+  const eixosDoPasso3 = listaCompleta ? eixosNomeados : eixosNomeados.filter((e) => eixosComIndicador.has(e.id) || e.id === eixoSelecionadoId);
+  const mostrarSemVinculo = listaCompleta || aspectoTemSemVinculo || eixoSelecionadoId === SEM_VINCULO_PDLS;
   // Sentinela do passo 3 (ver comentário em `SEM_VINCULO_PDLS`) — não é um Eixo de
   // verdade, por isso não aparece em `eixosPDLS.find(...)` acima.
   const semVinculoSelecionado = eixoSelecionadoId === SEM_VINCULO_PDLS;
@@ -188,12 +202,14 @@ export default function EstruturaSustentabilidade() {
   };
 
   const abrirNovoAspecto = () => {
+    setErroAspecto('');
     setEditandoAspectoId(null);
     setFormAspecto(formAspectoVazio);
     setMostrarFormAspecto(true);
   };
 
   const abrirEditarAspecto = (ind: Indicador) => {
+    setErroAspecto('');
     setEditandoAspectoId(ind.id);
     setFormAspecto({ nome: ind.nome, descricao: ind.descricao, impactoColetivo: !!ind.impactoColetivo });
     setMostrarFormAspecto(true);
@@ -201,6 +217,17 @@ export default function EstruturaSustentabilidade() {
 
   const salvarAspecto = () => {
     if (!formAspecto.nome.trim() || !objetoSelecionado) return;
+    // Não deixa cadastrar (nem renomear para) um aspecto que já existe neste objeto contratual —
+    // compara sem diferenciar maiúsculas/minúsculas, acentos e espaços repetidos.
+    const normalizar = (t: string) => t.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+    const repetido = indicadores.find(
+      (i) => i.tipo === objetoSelecionado && i.id !== editandoAspectoId && normalizar(i.nome) === normalizar(formAspecto.nome),
+    );
+    if (repetido) {
+      setErroAspecto(`O aspecto "${capitalizarPalavras(repetido.nome)}" já está cadastrado para ${capitalizarPalavras(objetoSelecionado)}. Selecione-o na lista acima${editandoAspectoId ? ' ou use outro nome' : ' em vez de cadastrar de novo'}.`);
+      return;
+    }
+    setErroAspecto('');
     if (editandoAspectoId) {
       // `impactoColetivo` só vai no patch quando mudou — assim editar nome/descrição de um
       // Aspecto continua funcionando mesmo antes de a coluna existir no banco.
@@ -562,7 +589,7 @@ export default function EstruturaSustentabilidade() {
                 className="form-input"
                 placeholder="Nome do aspecto — ex: Gestão de Resíduos Sólidos"
                 value={formAspecto.nome}
-                onChange={(e) => setFormAspecto((p) => ({ ...p, nome: e.target.value }))}
+                onChange={(e) => { setFormAspecto((p) => ({ ...p, nome: e.target.value })); setErroAspecto(''); }}
               />
               <input
                 className="form-input"
@@ -581,10 +608,11 @@ export default function EstruturaSustentabilidade() {
                   específico. Não desconta IMR automaticamente; gera alerta de treinamento.
                 </span>
               </label>
-              <button className="btn-secondary" onClick={() => { setMostrarFormAspecto(false); setEditandoAspectoId(null); }}>Cancelar</button>
+              <button className="btn-secondary" onClick={() => { setMostrarFormAspecto(false); setEditandoAspectoId(null); setErroAspecto(''); }}>Cancelar</button>
               <button className="btn-primary" onClick={salvarAspecto}>
                 {editandoAspectoId ? 'Salvar' : <><Plus size={14} /> Adicionar</>}
               </button>
+              {erroAspecto && <span className="form-hint form-hint--danger" style={{ flexBasis: '100%' }}>{erroAspecto}</span>}
             </div>
           ) : podeCriar ? (
             <button className="btn-secondary btn-secondary--sm" style={{ marginTop: 12 }} onClick={abrirNovoAspecto}>
@@ -608,7 +636,9 @@ export default function EstruturaSustentabilidade() {
         <div className="occurrence-card wizard-card">
           <h3 className="occurrence-section-title">3. Eixo PDLS</h3>
           <p className="form-hint form-hint--muted" style={{ marginBottom: 8 }}>
-            Eixos já com indicador cadastrado para <strong>{capitalizarPalavras(aspectoSelecionado.nome)}</strong> aparecem marcados "(já em uso)"; os outros ainda estão disponíveis.
+            {listaCompleta
+              ? <>Eixos já com indicador cadastrado para <strong>{capitalizarPalavras(aspectoSelecionado.nome)}</strong> aparecem marcados "(já em uso)"; os outros ainda estão disponíveis.</>
+              : <>Mostrando só os eixos de <strong>{capitalizarPalavras(aspectoSelecionado.nome)}</strong>.</>}
           </p>
 
           <div className="form-group" style={{ maxWidth: 460 }}>
@@ -618,7 +648,7 @@ export default function EstruturaSustentabilidade() {
               onChange={(e) => selecionarEixo(e.target.value)}
             >
               <option value="" disabled>Selecione um Eixo PDLS...</option>
-              {eixosNomeados.map((eixo) => {
+              {eixosDoPasso3.map((eixo) => {
                 const jaCadastrado = indicadoresPDLSDe(aspectoSelecionado.id, eixo.id).length > 0;
                 return (
                   <option key={eixo.id} value={eixo.id}>
@@ -629,11 +659,18 @@ export default function EstruturaSustentabilidade() {
               {/* Pseudo-opção pra indicadores sem vinculação com nenhum Eixo PDLS — não é
                   um Eixo de verdade (não entra em `eixosPDLS`), só uma segunda opção de
                   seleção pro passo 3. Ver comentário em `SEM_VINCULO_PDLS`. */}
-              <option value={SEM_VINCULO_PDLS}>
-                Sem vinculação direta ao PDLS{indicadoresPDLSDe(aspectoSelecionado.id, null).length > 0 ? ' (já em uso)' : ''}
-              </option>
+              {mostrarSemVinculo && (
+                <option value={SEM_VINCULO_PDLS}>
+                  Sem vinculação direta ao PDLS{indicadoresPDLSDe(aspectoSelecionado.id, null).length > 0 ? ' (já em uso)' : ''}
+                </option>
+              )}
             </select>
             {eixosNomeados.length === 0 && <p className="empty-state-sm">Nenhum eixo cadastrado ainda.</p>}
+            {!listaCompleta && podeCriar && (
+              <button type="button" className="btn-secondary btn-secondary--sm" style={{ marginTop: 8 }} onClick={() => setMostrarTodosEixos(true)}>
+                Vincular a outro eixo
+              </button>
+            )}
           </div>
 
           {eixoSelecionado && (podeEditar || podeExcluir) && (
