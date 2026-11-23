@@ -5,7 +5,7 @@ import {
   dbLogs, dbPerfis, dbScoreHistorico, dbUsuarios,
 } from '../lib/db';
 import { supabase, supabaseConfigurado } from '../lib/supabaseClient';
-import { anoMesAtual, aplicarOcorrenciaEmMesPassado, calcularScoreMesAtual, medicoesDosMesesAnteriores, prepararMedicaoMesAtual, rotuloDoAnoMes } from '../utils/score';
+import { anoMesAtual, aplicarOcorrenciaEmMesPassado, calcularScoreMesAtual, medicoesDosMesesAnteriores, prepararMedicaoMesAtual, rotuloDoAnoMes, rotuloMesAtual } from '../utils/score';
 import { PERFIS_PADRAO, PERFIL_ADMIN_ID, PERFIL_COLABORADOR_ID, permissoesTotais } from '../config/sistema';
 import type {
   Contrato,
@@ -318,6 +318,46 @@ function gerarNotificacoesTreinamento(
       urgencia: 'media' as const,
       link: '/ocorrencias',
     }));
+}
+
+/** Nos últimos quantos dias do mês o sino avisa que o valor da nota ainda não foi informado. */
+const DIAS_AVISO_FIM_MES = 5;
+
+/**
+ * Aviso de "mês sem movimentação": perto do fim do mês, cada contrato ativo cuja Medição do mês
+ * ainda está sem o valor da NF gera um alerta no sino (some quando o valor é informado). O id leva
+ * o mês, então marcar como lida vale só para aquele mês.
+ */
+function gerarNotificacoesNotaPendente(contratos: Contrato[], medicoes: Medicao[]): Array<Omit<Notificacao, 'lida'>> {
+  const hoje = new Date();
+  const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+  const diasRestantes = ultimoDia - hoje.getDate();
+  if (diasRestantes >= DIAS_AVISO_FIM_MES) return [];
+
+  const anoMes = anoMesAtual();
+  const periodo = rotuloMesAtual();
+  const primeiroDia = `${anoMes}-01`;
+  const ultimoDiaIso = `${anoMes}-${String(ultimoDia).padStart(2, '0')}`;
+  const resultado: Array<Omit<Notificacao, 'lida'>> = [];
+  for (const c of contratos) {
+    if (c.status !== 'ativo') continue;
+    // Contrato que ainda não começou ou já terminou antes deste mês não tem nota para informar.
+    const inicio = c.vigenciaInicio;
+    const fim = c.vigenciaFim ?? c.vigencia;
+    if (inicio && inicio > ultimoDiaIso) continue;
+    if (fim && fim < primeiroDia) continue;
+    const medicao = medicoes.find((m) => m.contratoId === c.id && m.periodo.toLowerCase() === periodo);
+    if (medicao && medicao.valor > 0) continue;
+    resultado.push({
+      id: `nota-pendente:${c.id}:${anoMes}`,
+      tipo: 'nota-pendente',
+      titulo: `Valor da nota de ${periodo} não informado — contrato ${c.numero}`,
+      descricao: `${c.fornecedorNome}: ${diasRestantes === 0 ? 'o mês termina hoje' : `faltam ${diasRestantes} dia${diasRestantes !== 1 ? 's' : ''} para o mês terminar`} e o valor da NF ainda não foi preenchido em Medição e Pagamento.`,
+      urgencia: 'media',
+      link: '/medicao',
+    });
+  }
+  return resultado;
 }
 
 const ORDEM_URGENCIA: Record<Notificacao['urgencia'], number> = { alta: 0, media: 1, baixa: 2 };
@@ -1134,6 +1174,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const base = [
       ...gerarNotificacoesVigencia(visivel.contratos),
       ...gerarNotificacoesTreinamento(visivel.ocorrencias, dados.indicadores),
+      // Só para quem pode abrir a Medição e Pagamento (é lá que o valor é informado).
+      ...(perfilEfetivo?.permissoes.medicao?.ver ? gerarNotificacoesNotaPendente(visivel.contratos, visivel.medicoes) : []),
     ];
     return base
       .map((n) => ({ ...n, lida: dados.notificacoesLidasIds.includes(n.id) }))
@@ -1141,7 +1183,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (a.lida !== b.lida) return a.lida ? 1 : -1;
         return ORDEM_URGENCIA[a.urgencia] - ORDEM_URGENCIA[b.urgencia];
       });
-  }, [dados, visivel]);
+  }, [dados, visivel, perfilEfetivo]);
 
   const value = useMemo<DataContextValue | null>(() => {
     if (!dados || !visivel) return null;
