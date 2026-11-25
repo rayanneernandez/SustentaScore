@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, Plus, Pencil, Paperclip, X } from 'lucide-react';
 import { useData, statusVigencia, formatarDataBR } from '../context/DataContext';
-import { capitalizarPalavras } from '../utils/texto';
+import { capitalizarPalavras, numeroComAno } from '../utils/texto';
 import { BadgeVigencia, ModalContrato, ModalDetalheContrato } from '../components/ContratoModais';
 import type { Contrato } from '../types';
 
@@ -59,12 +59,20 @@ export default function Contratos() {
     [contratos],
   );
 
+  const cnpjPorFornecedor = useMemo(() => new Map(fornecedores.map((f) => [f.id, f.cnpj ?? ''])), [fornecedores]);
+
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
+    const termoDigitos = termo.replace(/\D/g, '');
     return contratos
       .filter((c) => {
+        const cnpj = cnpjPorFornecedor.get(c.fornecedorId) ?? '';
         const matchBusca =
-          !termo || c.numero.toLowerCase().includes(termo) || c.fornecedorNome.toLowerCase().includes(termo);
+          !termo ||
+          c.numero.toLowerCase().includes(termo) ||
+          c.fornecedorNome.toLowerCase().includes(termo) ||
+          cnpj.toLowerCase().includes(termo) ||
+          (termoDigitos.length >= 2 && cnpj.replace(/\D/g, '').includes(termoDigitos));
         const matchUnidade = unidadeFiltro === 'todas' || c.unidade === unidadeFiltro;
         const matchObjeto = objetoFiltro === 'todos' || c.objeto === objetoFiltro;
         const matchStatus = statusFiltro === 'todos' || c.status === statusFiltro;
@@ -75,7 +83,7 @@ export default function Contratos() {
         (a, b) =>
           a.fornecedorNome.localeCompare(b.fornecedorNome, 'pt-BR') || a.numero.localeCompare(b.numero, 'pt-BR', { numeric: true }),
       );
-  }, [contratos, busca, unidadeFiltro, objetoFiltro, statusFiltro, fornecedorFiltroId]);
+  }, [contratos, busca, unidadeFiltro, objetoFiltro, statusFiltro, fornecedorFiltroId, cnpjPorFornecedor]);
 
   const temFiltro = busca.trim() !== '' || unidadeFiltro !== 'todas' || objetoFiltro !== 'todos' || statusFiltro !== 'todos' || fornecedorFiltroId !== '';
 
@@ -93,7 +101,7 @@ export default function Contratos() {
           <Search size={16} className="search-icon" />
           <input
             type="text"
-            placeholder="Buscar por número do contrato ou fornecedor..."
+            placeholder="Buscar por número do contrato, fornecedor ou CNPJ..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             className="search-input"
@@ -163,7 +171,7 @@ export default function Contratos() {
                   <td>
                     <div className="data-table-nome">
                       <span className={`status-dot-only status-dot-only--${c.faixa}`} title={`Score: ${c.score} pontos`} />
-                      {c.numero}
+                      {numeroComAno(c)}
                       {!!c.anexos?.length && (
                         <span className="contract-item-anexo-icon" title={`${c.anexos.length} anexo(s)`}>
                           <Paperclip size={12} /> {c.anexos.length}

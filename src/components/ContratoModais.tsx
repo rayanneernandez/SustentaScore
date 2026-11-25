@@ -68,10 +68,21 @@ export function ModalContrato({
   const normalizarNumero = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
   // Aviso na hora, enquanto digita: o número já existe nesta lista (a conferência no banco acontece ao salvar).
   const numeroJaNaLista = form.numero.trim()
-    ? contratos.find((c) => c.id !== contratoParaEditar?.id && normalizarNumero(c.numero) === normalizarNumero(form.numero)) ?? null
+    ? contratos.find(
+        (c) =>
+          c.id !== contratoParaEditar?.id &&
+          c.fornecedorId === form.fornId &&
+          (c.ano ?? '').trim() === form.ano.trim() &&
+          normalizarNumero(c.numero) === normalizarNumero(form.numero),
+      ) ?? null
     : null;
   const contratoRepetido =
-    numeroDuplicado && normalizarNumero(numeroDuplicado.numero) === normalizarNumero(form.numero) ? numeroDuplicado : numeroJaNaLista;
+    numeroDuplicado &&
+    numeroDuplicado.fornecedorId === form.fornId &&
+    (numeroDuplicado.ano ?? '').trim() === form.ano.trim() &&
+    normalizarNumero(numeroDuplicado.numero) === normalizarNumero(form.numero)
+      ? numeroDuplicado
+      : numeroJaNaLista;
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   // ── Aspectos de Sustentabilidade deste contrato ──
@@ -139,7 +150,7 @@ export function ModalContrato({
       return;
     }
     setSalvando(true);
-    const existente = await buscarContratoPorNumero(form.numero, contratoParaEditar?.id);
+    const existente = await buscarContratoPorNumero(form.numero, contratoParaEditar?.id, form.fornId, form.ano);
     if (existente) {
       setNumeroDuplicado(existente);
       setSalvando(false);
@@ -262,6 +273,21 @@ export function ModalContrato({
             )}
           </div>
 
+          {/* CNPJ — escolher o CNPJ seleciona o fornecedor, e escolher o fornecedor já preenche o CNPJ */}
+          <div className="form-group">
+            <label className="form-label">CNPJ do fornecedor</label>
+            {contratoParaEditar ? (
+              <input className="form-input" value={fornSelecionado?.cnpj ?? ''} disabled />
+            ) : (
+              <select className="form-input" value={form.fornId} onChange={(e) => set('fornId', e.target.value)}>
+                <option value="">Selecione</option>
+                {fornecedores.map((f) => (
+                  <option key={f.id} value={f.id}>{f.cnpj} — {f.nome}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
           {/* Objeto */}
           <div className="form-group">
             <label className="form-label">Objeto *</label>
@@ -282,7 +308,7 @@ export function ModalContrato({
             <input className={`form-input${invalido('numero') ? ' form-input--erro' : ''}`} placeholder="CT-2024/001" value={form.numero} onChange={(e) => set('numero', e.target.value)} />
             {contratoRepetido && (
               <span className="form-hint form-hint--danger">
-                Já existe um contrato com o número {contratoRepetido.numero} ({contratoRepetido.fornecedorNome}). Não é possível cadastrar o mesmo número duas vezes.
+                Este fornecedor já tem o contrato {contratoRepetido.numero}{contratoRepetido.ano ? `/${contratoRepetido.ano}` : ''}. O mesmo número só pode repetir em outro fornecedor ou em outro ano.
               </span>
             )}
           </div>
@@ -563,7 +589,8 @@ export function ModalDetalheContrato({
   /** Abre o detalhe só para leitura (usado na aba Fornecedores): esconde editar, prorrogar, status e anexos. */
   somenteConsulta?: boolean;
 }) {
-  const { updateContrato, medicoes, indicadores, ocorrencias, eixosPDLS, podeEditar: podeEditarPagina, podeExcluir: podeExcluirPagina } = useData();
+  const { updateContrato, medicoes, indicadores, ocorrencias, eixosPDLS, fornecedores: todosFornecedores, podeEditar: podeEditarPagina, podeExcluir: podeExcluirPagina } = useData();
+  const cnpjDoFornecedor = todosFornecedores.find((f) => f.id === contrato.fornecedorId)?.cnpj;
   const podeEditar = !somenteConsulta && podeEditarPagina('contratos');
   const podeExcluir = !somenteConsulta && podeExcluirPagina('contratos');
   const [mostrarProrrogacao, setMostrarProrrogacao] = useState(false);
@@ -689,8 +716,16 @@ export function ModalDetalheContrato({
       <div className="modal modal--lg modal--scroll" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <h2 className="modal-title">{contrato.numero}</h2>
-            <p className="modal-subtitle" style={{ margin: '2px 0 0' }}>{contrato.fornecedorNome} · {contrato.objeto ? capitalizarPalavras(contrato.objeto) : contrato.objeto}</p>
+            <h2 className="modal-title">
+              {contrato.numero}
+              {contrato.ano ? <span className="modal-title-ano">/{contrato.ano}</span> : null}
+            </h2>
+            <p className="modal-subtitle" style={{ margin: '2px 0 0' }}>
+              {contrato.fornecedorNome}
+              {cnpjDoFornecedor ? ` · CNPJ ${cnpjDoFornecedor}` : ''}
+              {' · '}
+              {contrato.objeto ? capitalizarPalavras(contrato.objeto) : contrato.objeto}
+            </p>
             {rotuloAutoria(contrato.criadoPor, contrato.criadoEm) && (
               <p className="autoria-linha">{rotuloAutoria(contrato.criadoPor, contrato.criadoEm)}</p>
             )}

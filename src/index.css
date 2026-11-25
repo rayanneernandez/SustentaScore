@@ -4356,3 +4356,8 @@ html, body, #root {
   cursor: pointer;
   font-size: 12px;
 }
+
+/* Ano ao lado do número grande do contrato */
+.modal-title-ano { color: var(--text-muted); font-size: 0.62em; font-weight: 500; margin-left: 2px; }
+.score-faixa-mes { margin: 12px 0 0; text-align: center; font-size: 13px; color: var(--text-muted); }
+.score-faixa-mes strong { color: var(--text); }

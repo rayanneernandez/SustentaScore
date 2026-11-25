@@ -52,3 +52,8 @@ export function rotuloAutoria(por?: string, em?: string, rotulo = 'Cadastrado'):
     : '';
   return `${rotulo}${parteQuem}${parteQuando}`;
 }
+
+/** "05/2026": número do contrato com o ano, para diferenciar quando o mesmo número se repete. */
+export function numeroComAno(c: { numero: string; ano?: string }): string {
+  return c.ano && c.ano.trim() ? `${c.numero}/${c.ano.trim()}` : c.numero;
+}

@@ -372,7 +372,7 @@ interface DataContextValue {
   /** Fornecedor já cadastrado com este CNPJ (confere nesta tela e direto no banco), ou null. */
   buscarFornecedorPorCnpj: (cnpj: string, ignorarId?: string) => Promise<Fornecedor | null>;
   /** Contrato já cadastrado com este número (confere nesta tela e direto no banco), ou null. */
-  buscarContratoPorNumero: (numero: string, ignorarId?: string) => Promise<Contrato | null>;
+  buscarContratoPorNumero: (numero: string, ignorarId?: string, fornecedorId?: string, ano?: string) => Promise<Contrato | null>;
   updateFornecedor: (id: string, patch: Partial<Fornecedor>) => void;
   addContrato: (c: Contrato) => void;
   updateContrato: (id: string, patch: Partial<Contrato>, evento?: { tipo: HistoricoTipo; descricao: string }) => void;
@@ -551,10 +551,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const buscarContratoPorNumero = async (numero: string, ignorarId?: string): Promise<Contrato | null> => {
+  // O mesmo número pode se repetir (em outro fornecedor ou em outro ano). Só é duplicado o contrato
+  // com o mesmo fornecedor + número + ano.
+  const buscarContratoPorNumero = async (numero: string, ignorarId?: string, fornecedorId?: string, ano?: string): Promise<Contrato | null> => {
     const alvo = normalizarNumeroContrato(numero);
     if (!alvo) return null;
-    const mesmo = (c: Contrato) => c.id !== ignorarId && normalizarNumeroContrato(c.numero) === alvo;
+    const mesmo = (c: Contrato) =>
+      c.id !== ignorarId &&
+      normalizarNumeroContrato(c.numero) === alvo &&
+      (!fornecedorId || c.fornecedorId === fornecedorId) &&
+      (c.ano ?? '').trim() === (ano ?? '').trim();
     const local = (dados?.contratos ?? []).find(mesmo);
     if (local) return local;
     try {

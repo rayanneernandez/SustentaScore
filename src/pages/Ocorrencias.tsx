@@ -5,7 +5,7 @@ import {
   Upload, Paperclip, Link2, GraduationCap, ExternalLink,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
-import { capitalizarPalavras, rotuloAutoria } from '../utils/texto';
+import { capitalizarPalavras, numeroComAno, rotuloAutoria } from '../utils/texto';
 import { TAMANHO_MAX_ANEXO, MAX_ANEXOS_POR_ENVIO, arquivosParaAnexos } from '../utils/anexos';
 import { hojeISO, rotuloDoAnoMes } from '../utils/score';
 import type { Ocorrencia, TipoRegistroOcorrencia } from '../types';
@@ -15,6 +15,9 @@ function formatDate(dateStr: string) {
   const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
   return `${parseInt(day)} de ${months[parseInt(month) - 1]}. de ${year}`;
 }
+
+/** Valores permitidos de dedução: de 25 em 25, até o máximo do score (500). */
+const OPCOES_DEDUCAO = Array.from({ length: 20 }, (_, i) => (i + 1) * 25);
 
 function criarFormVazio() {
   return {
@@ -82,6 +85,8 @@ export default function Ocorrencias() {
 
   const contratosDoFornecedorSelecionado = contratos.filter((c) => c.fornecedorId === form.fornecedorId);
   const contratoSelecionado = contratos.find((c) => c.id === form.contratoId);
+  const fornecedorDoForm = fornecedores.find((f) => f.id === form.fornecedorId);
+  const cnpjDe = (fornecedorId?: string) => fornecedores.find((f) => f.id === fornecedorId)?.cnpj;
   // Aspectos que valem para o contrato escolhido (definidos no cadastro do contrato). Contrato antigo,
   // sem essa escolha, continua oferecendo todos os aspectos, como sempre foi.
   const aspectosDoContrato = contratoSelecionado?.aspectosIds
@@ -143,6 +148,32 @@ export default function Ocorrencias() {
   if (deducaoManualAplicada && !form.justificativa.trim()) camposFaltando.push({ chave: 'justificativa', rotulo: 'Justificativa da dedução manual' });
   const invalido = (chave: string) => tentouSalvar && camposFaltando.some((c) => c.chave === chave);
 
+  const numeroDoContrato = (contratoId?: string) => {
+    const c = contratos.find((x) => x.id === contratoId);
+    return c ? numeroComAno(c) : '—';
+  };
+
+  /** Escolheu o fornecedor: se ele só tem um contrato, o contrato já vem selecionado. */
+  const escolherFornecedor = (fornecedorId: string) => {
+    const doFornecedor = contratos.filter((c) => c.fornecedorId === fornecedorId);
+    const unico = doFornecedor.length === 1 ? doFornecedor[0] : undefined;
+    const permitidos = unico?.aspectosIds;
+    setErroJustificativa(false);
+    setForm((p) => {
+      const base = { ...p, fornecedorId, contratoId: unico?.id ?? '', registradoPor: '' };
+      const perdeAspecto = !!p.indicadorId && !!permitidos && !permitidos.includes(p.indicadorId);
+      return perdeAspecto
+        ? { ...base, indicadorId: '', eixoPDLSId: '', ...(aspectoColetivo ? { tipoRegistro: 'ocorrencia' as TipoRegistroOcorrencia, deducao: 25, deducaoManual: false, justificativa: '' } : {}) }
+        : base;
+    });
+  };
+
+  /** Abre o formulário; havendo um único fornecedor, já vem selecionado (e o contrato, se ele só tiver um). */
+  const abrirModal = () => {
+    setShowModal(true);
+    if (fornecedores.length === 1) escolherFornecedor(fornecedores[0].id);
+  };
+
   const handleAdd = async () => {
     if (camposFaltando.length > 0) {
       setTentouSalvar(true);
@@ -185,7 +216,7 @@ export default function Ocorrencias() {
           <p className="page-subtitle">Registro de ocorrências do contrato — com dedução de pontos ou apenas para acompanhamento, sem dedução.</p>
         </div>
         {podeCriar && (
-          <button className="btn-primary" onClick={() => setShowModal(true)}>
+          <button className="btn-primary" onClick={abrirModal}>
             <Plus size={16} />
             Nova Ocorrência
           </button>
@@ -215,7 +246,7 @@ export default function Ocorrencias() {
             .filter((c) => filtroFornecedor === 'todos' || c.fornecedorId === filtroFornecedor)
             .map((c) => (
               <option key={c.id} value={c.id}>
-                {filtroFornecedor === 'todos' ? `${c.fornecedorNome} — ` : ''}{c.numero}{c.unidade ? ` · ${c.unidade}` : ''}
+                {filtroFornecedor === 'todos' ? `${c.fornecedorNome} — ` : ''}{numeroComAno(c)}{c.unidade ? ` · ${c.unidade}` : ''}
               </option>
             ))}
         </select>
@@ -257,7 +288,7 @@ export default function Ocorrencias() {
                       <span className="occurrence-desc">{o.descricao}</span>
                       <span className="occurrence-meta">
                         <strong>{o.fornecedorNome}</strong>
-                        <span>Contrato {contratos.find((c) => c.id === o.contratoId)?.numero ?? '—'}</span>
+                        <span>Contrato {numeroDoContrato(o.contratoId)}</span>
                         {o.indicadorNome && <span>{o.indicadorNome}</span>}
                       </span>
                     </div>
@@ -285,8 +316,12 @@ export default function Ocorrencias() {
                         <span className="detail-value">{o.fornecedorNome}</span>
                       </div>
                       <div>
+                        <span className="detail-label">CNPJ</span>
+                        <span className="detail-value">{cnpjDe(o.fornecedorId) ?? '—'}</span>
+                      </div>
+                      <div>
                         <span className="detail-label">Contrato</span>
-                        <span className="detail-value">{contratos.find((c) => c.id === o.contratoId)?.numero ?? '—'}</span>
+                        <span className="detail-value">{numeroDoContrato(o.contratoId)}</span>
                       </div>
                       <div>
                         <span className="detail-label">Aspecto de Sustentabilidade</span>
@@ -449,11 +484,16 @@ export default function Ocorrencias() {
               <select
                 className={`form-input${invalido('fornecedor') ? ' form-input--erro' : ''}`}
                 value={form.fornecedorId}
-                onChange={(e) => setForm({ ...form, fornecedorId: e.target.value, contratoId: '', registradoPor: '' })}
+                onChange={(e) => escolherFornecedor(e.target.value)}
               >
                 <option value="">Selecione...</option>
-                {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}{f.cnpj ? ` — CNPJ ${f.cnpj}` : ''}</option>)}
               </select>
+              {fornecedorDoForm && (
+                <span className="form-hint form-hint--muted">
+                  <strong>{fornecedorDoForm.nome}</strong>{fornecedorDoForm.cnpj ? ` · CNPJ ${fornecedorDoForm.cnpj}` : ''}
+                </span>
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Contrato *</label>
@@ -477,7 +517,7 @@ export default function Ocorrencias() {
               >
                 <option value="">Selecione...</option>
                 {contratosDoFornecedorSelecionado.map((c) => (
-                  <option key={c.id} value={c.id}>{c.numero}{c.unidade ? ` · ${c.unidade}` : ''}</option>
+                  <option key={c.id} value={c.id}>{numeroComAno(c)}{c.unidade ? ` · ${c.unidade}` : ''}</option>
                 ))}
               </select>
             </div>
@@ -567,17 +607,16 @@ export default function Ocorrencias() {
             {form.tipoRegistro === 'ocorrencia' && (
               <div className="form-group">
                 <label className="form-label">Dedução (pontos) *</label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  step={1}
+                {/* Só múltiplos de 25 (25, 50, 75 … 500) — não é um valor livre. */}
+                <select
                   className={`form-input ${invalido('deducao') ? 'form-input--erro' : ''}`}
-                  placeholder="Ex: 25"
                   value={form.deducao}
-                  onChange={(e) => setForm({ ...form, deducao: e.target.value === '' ? '' : Number(e.target.value) })}
-                />
-                {invalido('deducao') && <span className="form-hint form-hint--danger">Informe um valor de 1 ou mais.</span>}
+                  onChange={(e) => setForm({ ...form, deducao: Number(e.target.value) })}
+                >
+                  {OPCOES_DEDUCAO.map((v) => (
+                    <option key={v} value={v}>{v} pontos</option>
+                  ))}
+                </select>
               </div>
             )}
 

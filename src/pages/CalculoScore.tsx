@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell } from 'recharts';
 import { useData } from '../context/DataContext';
+import { numeroComAno } from '../utils/texto';
 import { PAGAMENTO_MINIMO_NF, SCORE_INICIAL_MES, SCORE_ZONA_PRETA, periodoParaChave } from '../utils/score';
 
 function getFaixa(score: number): { label: string; color: string; pct: string } {
@@ -142,7 +143,7 @@ export default function CalculoScore() {
           <option value="">Selecione um contrato</option>
           {contratosParaSelecao.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.fornecedorNome} — {c.numero}{c.unidade ? ` · ${c.unidade}` : ''}{c.status === 'inativo' ? ' (Inativo — histórico)' : ''}
+              {c.fornecedorNome} — {numeroComAno(c)}{c.unidade ? ` · ${c.unidade}` : ''}{c.status === 'inativo' ? ' (Inativo — histórico)' : ''}
             </option>
           ))}
         </select>
@@ -197,12 +198,13 @@ export default function CalculoScore() {
             <span className="score-faixa-label">{faixa.label}</span>
             <span className="score-faixa-pct">{faixa.pct}</span>
           </div>
+          {periodoSel && <p className="score-faixa-mes">Índice referente a <strong>{periodoSel}</strong></p>}
         </div>
 
         {/* Detalhamento */}
         <div className="score-detail-card">
           <h3 className="score-card-title">Detalhamento — {contrato.fornecedorNome}</h3>
-          <p className="score-contract-num">{contrato.numero}</p>
+          <p className="score-contract-num">{numeroComAno(contrato)}</p>
           {contrato.status === 'inativo' && (
             <p className="form-hint form-hint--muted" style={{ marginTop: -4, marginBottom: 8 }}>
               Contrato inativo — dados exibidos apenas como histórico de desempenho, sem impacto no score atual do fornecedor.

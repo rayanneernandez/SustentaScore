@@ -3,6 +3,7 @@ import { FileSpreadsheet, FileText, ShieldAlert } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useData } from '../context/DataContext';
+import { numeroComAno } from '../utils/texto';
 import { PAGAMENTO_MINIMO_NF, SCORE_ZONA_PRETA, calcularValorAPagar, pagamentoDoScore } from '../utils/score';
 import { formatarReais, lerReais } from '../utils/moeda';
 import { gerarRelatorioMensalPDF } from '../utils/relatorioMensal';
@@ -269,7 +270,7 @@ export default function MedicaoPagamento() {
           <select className="filter-select-input" value={contrato.id} onChange={(e) => setContratoSel(e.target.value)}>
             {contratosParaSelecao.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.fornecedorNome} — {c.numero}{c.unidade ? ` · ${c.unidade}` : ''}
+                {c.fornecedorNome} — {numeroComAno(c)}{c.unidade ? ` · ${c.unidade}` : ''}
               </option>
             ))}
           </select>
@@ -337,7 +338,7 @@ export default function MedicaoPagamento() {
         <div className="payment-history-header">
           <div>
             <h3 className="payment-card-title">Histórico de Medições</h3>
-            <p className="payment-subtitle">{contrato.fornecedorNome} – {contrato.numero}</p>
+            <p className="payment-subtitle">{contrato.fornecedorNome} – {numeroComAno(contrato)}</p>
           </div>
           <div className="payment-history-actions">
             <button className="btn-secondary btn-secondary--sm" onClick={exportarCSV}>
